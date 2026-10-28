@@ -7,13 +7,15 @@ import {
   FileSearch,
   Coins,
   FlaskConical,
-  UserCheck
+  UserCheck,
+  Headphones
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, currentUser }) {
   const navItems = [
     { id: 'overview', label: 'Overview', icon: Activity },
     { id: 'playground', label: 'Agent Playground', icon: Terminal },
+    { id: 'support', label: 'Support Agent', icon: Headphones },
     { id: 'policies', label: 'Policy Center', icon: Sliders },
     { id: 'audit', label: 'Audit Trail', icon: FileSearch },
     { id: 'provider', label: 'Provider & Budget', icon: Coins },

@@ -18,11 +18,16 @@ function authMiddleware(req, res, next) {
     'accounts:read',
     'transfers:execute',
     'refunds:execute',
-    'preferences:write'
+    'preferences:write',
+    'customers:read',
+    'orders:read',
+    'subscriptions:write'
   ];
 
   if (agentId === 'untrusted-agent') {
     agentPermissions = [];
+  } else if (agentId === 'support-readonly-agent') {
+    agentPermissions = ['customers:read', 'orders:read'];
   } else if (agentId === 'admin-agent') {
     agentPermissions = ['*'];
   }
@@ -32,12 +37,12 @@ function authMiddleware(req, res, next) {
     name: userId === 'usr_sarah_01' ? 'Sarah Connor' : (userId === 'usr_michael_02' ? 'Michael Scott' : 'Alex Thorne'),
     tenantId,
     role,
-    permissions: role === 'admin' ? ['*'] : ['accounts:read', 'transfers:execute', 'preferences:write']
+    permissions: role === 'admin' ? ['*'] : ['accounts:read', 'transfers:execute', 'preferences:write', 'customers:read', 'orders:read']
   };
 
   req.agent = {
     id: agentId,
-    name: 'AgentShield Voice Assistant',
+    name: agentId === 'customer-support-agent' ? 'AgentShield Customer Support Agent' : 'AgentShield Voice Assistant',
     permissions: agentPermissions
   };
 

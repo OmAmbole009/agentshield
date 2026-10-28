@@ -105,6 +105,59 @@ function initSchema(db) {
       timestamp TEXT NOT NULL
     );
 
+    -- Customer Support Agent Entities
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      tier TEXT DEFAULT 'STANDARD',
+      status TEXT DEFAULT 'ACTIVE',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS orders (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL,
+      total_amount REAL NOT NULL CHECK(total_amount >= 0),
+      refunded_amount REAL NOT NULL DEFAULT 0.0 CHECK(refunded_amount >= 0),
+      currency TEXT DEFAULT 'USD',
+      status TEXT NOT NULL,
+      items_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (customer_id) REFERENCES customers(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS order_refunds (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      amount REAL NOT NULL CHECK(amount > 0),
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL,
+      idempotency_key TEXT UNIQUE,
+      approval_id TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (order_id) REFERENCES orders(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL,
+      tenant_id TEXT NOT NULL,
+      plan TEXT NOT NULL,
+      price REAL NOT NULL,
+      status TEXT NOT NULL,
+      cancel_at_period_end INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (customer_id) REFERENCES customers(id)
+    );
+
     -- Indexes for high-frequency queries
     CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
     CREATE INDEX IF NOT EXISTS idx_tx_account ON transactions(account_id);
@@ -112,6 +165,11 @@ function initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_challenges_user ON verification_challenges(user_id, status);
     CREATE INDEX IF NOT EXISTS idx_audit_req ON audit_log(request_id);
     CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_customers_user ON customers(user_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_refunds_order ON order_refunds(order_id);
+    CREATE INDEX IF NOT EXISTS idx_refunds_idempotency ON order_refunds(idempotency_key);
+    CREATE INDEX IF NOT EXISTS idx_subs_customer ON subscriptions(customer_id);
   `);
 }
 

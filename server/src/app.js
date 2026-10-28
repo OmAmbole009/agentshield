@@ -9,6 +9,7 @@ const { PolicyEngine } = require('./policy/engine');
 const { ChallengeService } = require('./verification/challengeService');
 const { AuditLogger } = require('./audit/auditLogger');
 const { BankingService } = require('./business/bankingService');
+const { CustomerSupportService } = require('./business/customerSupportService');
 const { IntentExtractor } = require('./ai/intentExtractor');
 const { BudgetGuard } = require('./providers/budgetGuard');
 const { createGnaniAdapter } = require('./providers/gnani/gnaniAdapter');
@@ -23,6 +24,7 @@ const { createAuditRouter } = require('./api/routes/auditRoutes');
 const { createProviderRouter } = require('./api/routes/providerRoutes');
 const { createAccountRouter } = require('./api/routes/accountRoutes');
 const { createScenariosRouter } = require('./api/routes/scenariosRoutes');
+const { createSupportRouter } = require('./api/routes/supportRoutes');
 
 function createApp(customDb = null) {
   const app = express();
@@ -36,6 +38,7 @@ function createApp(customDb = null) {
   const challengeService = new ChallengeService(db);
   const auditLogger = new AuditLogger(db);
   const bankingService = new BankingService(db);
+  const customerSupportService = new CustomerSupportService(db);
   const budgetGuard = new BudgetGuard(db);
   const gnaniAdapter = createGnaniAdapter({ budgetGuard });
   const intentExtractor = new IntentExtractor({ deterministicOnly: !config.gnani.enabled });
@@ -46,6 +49,7 @@ function createApp(customDb = null) {
     challengeService,
     auditLogger,
     bankingService,
+    customerSupportService,
     intentExtractor,
     gnaniAdapter
   });
@@ -85,6 +89,7 @@ function createApp(customDb = null) {
   app.use('/api/provider', createProviderRouter({ budgetGuard, gnaniAdapter }));
   app.use('/api/accounts', createAccountRouter({ bankingService, db }));
   app.use('/api/scenarios', createScenariosRouter({ securityGateway, bankingService, db }));
+  app.use('/api/support', createSupportRouter({ customerSupportService, securityGateway, db }));
 
   // Serve static client bundle if built
   const clientDist = path.resolve(process.cwd(), 'client/dist');
@@ -114,6 +119,7 @@ function createApp(customDb = null) {
     challengeService,
     auditLogger,
     bankingService,
+    customerSupportService,
     budgetGuard,
     gnaniAdapter
   };

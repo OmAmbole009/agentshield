@@ -4,7 +4,11 @@ const {
   TransferFundsSchema,
   RequestRefundSchema,
   UpdatePreferenceSchema,
-  ExportCustomerDataSchema
+  ExportCustomerDataSchema,
+  GetCustomerProfileSchema,
+  GetCustomerOrdersSchema,
+  IssueRefundSchema,
+  UpdateSubscriptionSchema
 } = require('./schemas');
 
 const ACTION_TYPES = {
@@ -12,7 +16,11 @@ const ACTION_TYPES = {
   TRANSFER_FUNDS: 'TRANSFER_FUNDS',
   REQUEST_REFUND: 'REQUEST_REFUND',
   UPDATE_PREFERENCE: 'UPDATE_PREFERENCE',
-  EXPORT_CUSTOMER_DATA: 'EXPORT_CUSTOMER_DATA'
+  EXPORT_CUSTOMER_DATA: 'EXPORT_CUSTOMER_DATA',
+  GET_CUSTOMER_PROFILE: 'GET_CUSTOMER_PROFILE',
+  GET_CUSTOMER_ORDERS: 'GET_CUSTOMER_ORDERS',
+  ISSUE_REFUND: 'ISSUE_REFUND',
+  UPDATE_SUBSCRIPTION: 'UPDATE_SUBSCRIPTION'
 };
 
 const RISK_LEVELS = {
@@ -90,6 +98,56 @@ const ACTION_REGISTRY = {
     getCanonicalParams: (p) => ({
       format: p.format,
       includePII: p.includePersonallyIdentifiableInformation
+    })
+  },
+  [ACTION_TYPES.GET_CUSTOMER_PROFILE]: {
+    type: ACTION_TYPES.GET_CUSTOMER_PROFILE,
+    name: 'Get Customer Profile',
+    description: 'Retrieves authorized customer account and profile data',
+    riskLevel: RISK_LEVELS.LOW,
+    requiredPermission: 'customers:read',
+    schema: GetCustomerProfileSchema,
+    isMutating: false,
+    requiresApprovalDefault: false,
+    getCanonicalParams: (p) => ({ customerId: p.customerId })
+  },
+  [ACTION_TYPES.GET_CUSTOMER_ORDERS]: {
+    type: ACTION_TYPES.GET_CUSTOMER_ORDERS,
+    name: 'Get Customer Orders',
+    description: 'Retrieves authorized customer order history',
+    riskLevel: RISK_LEVELS.LOW,
+    requiredPermission: 'orders:read',
+    schema: GetCustomerOrdersSchema,
+    isMutating: false,
+    requiresApprovalDefault: false,
+    getCanonicalParams: (p) => ({ customerId: p.customerId })
+  },
+  [ACTION_TYPES.ISSUE_REFUND]: {
+    type: ACTION_TYPES.ISSUE_REFUND,
+    name: 'Issue Order Refund',
+    description: 'Issues a refund against an eligible order subject to tiered thresholds',
+    riskLevel: RISK_LEVELS.HIGH,
+    requiredPermission: 'refunds:execute',
+    schema: IssueRefundSchema,
+    isMutating: true,
+    requiresApprovalDefault: true,
+    getCanonicalParams: (p) => ({
+      orderId: p.orderId,
+      amount: Number(p.amount)
+    })
+  },
+  [ACTION_TYPES.UPDATE_SUBSCRIPTION]: {
+    type: ACTION_TYPES.UPDATE_SUBSCRIPTION,
+    name: 'Update Subscription Plan',
+    description: 'Changes a customer recurring subscription plan',
+    riskLevel: RISK_LEVELS.MEDIUM,
+    requiredPermission: 'subscriptions:write',
+    schema: UpdateSubscriptionSchema,
+    isMutating: true,
+    requiresApprovalDefault: false,
+    getCanonicalParams: (p) => ({
+      subscriptionId: p.subscriptionId,
+      newPlan: p.newPlan
     })
   }
 };

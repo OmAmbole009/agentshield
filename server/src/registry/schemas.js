@@ -40,10 +40,39 @@ const ExportCustomerDataSchema = z.object({
   tenantId: z.string().min(3).max(64).optional()
 }).strict();
 
+// Schema for GET_CUSTOMER_PROFILE
+const GetCustomerProfileSchema = z.object({
+  customerId: z.string().min(3).max(64).regex(/^cust_[a-zA-Z0-9_]+$/, 'Invalid customer ID format')
+}).strict();
+
+// Schema for GET_CUSTOMER_ORDERS
+const GetCustomerOrdersSchema = z.object({
+  customerId: z.string().min(3).max(64).regex(/^cust_[a-zA-Z0-9_]+$/, 'Invalid customer ID format')
+}).strict();
+
+// Schema for ISSUE_REFUND
+const IssueRefundSchema = z.object({
+  orderId: z.string().min(3).max(64).regex(/^ord_[a-zA-Z0-9_]+$/, 'Invalid order ID format'),
+  amount: z.number().positive('Refund amount must be strictly positive').max(100000, 'Amount exceeds maximum allowable threshold'),
+  reason: z.string().min(3, 'Refund reason must be at least 3 characters').max(200),
+  idempotencyKey: z.string().min(8).max(128).optional()
+}).strict();
+
+// Schema for UPDATE_SUBSCRIPTION
+const UpdateSubscriptionSchema = z.object({
+  subscriptionId: z.string().min(3).max(64).regex(/^sub_[a-zA-Z0-9_]+$/, 'Invalid subscription ID format'),
+  newPlan: z.enum(['basic', 'pro', 'enterprise']),
+  cancelAtPeriodEnd: z.boolean().optional()
+}).strict();
+
 module.exports = {
   ReadBalanceSchema,
   TransferFundsSchema,
   RequestRefundSchema,
   UpdatePreferenceSchema,
-  ExportCustomerDataSchema
+  ExportCustomerDataSchema,
+  GetCustomerProfileSchema,
+  GetCustomerOrdersSchema,
+  IssueRefundSchema,
+  UpdateSubscriptionSchema
 };

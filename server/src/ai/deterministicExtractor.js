@@ -71,7 +71,7 @@ class DeterministicIntentExtractor {
     // e.g., "Transfer $500 to recp_landlord_prop", "Send 1200 dollars to landlord", "Pay electric company $150", "Transfer $15000 to recp_electric_co"
     if (lower.includes('transfer') || lower.includes('send') || lower.includes('pay ') || lower.includes('wire ')) {
       // Extract amount
-      const amountMatch = clean.match(/\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)\s*(?:dollars|usd)?/i);
+      const amountMatch = clean.match(/\$?\s*((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)\s*(?:dollars|usd)?/i);
       let amount = 0;
       if (amountMatch) {
         amount = parseFloat(amountMatch[1].replace(/,/g, ''));
@@ -106,7 +106,37 @@ class DeterministicIntentExtractor {
       };
     }
 
-    // 4. Refund Requests
+    // 4. Order Refund Requests (Customer Support)
+    // e.g., "Refund $50 for order ord_sarah_101", "Issue refund $160 for ord_sarah_101", "Refund order ord_sarah_102 $1200"
+    if ((lower.includes('refund') || lower.includes('reversal')) && (lower.includes('ord_') || lower.includes('order'))) {
+      const ordMatch = clean.match(/ord_[a-zA-Z0-9_]+/);
+      const orderId = ordMatch ? ordMatch[0] : (context.defaultOrderId || 'ord_sarah_101');
+
+      // Strip order ID first to avoid capturing digits from order ID (e.g. ord_sarah_102)
+      const textWithoutOrder = ordMatch ? clean.replace(ordMatch[0], '') : clean;
+      const amountMatch = textWithoutOrder.match(/\$\s*((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)/i)
+        || textWithoutOrder.match(/((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)\s*(?:dollars|usd)/i)
+        || textWithoutOrder.match(/((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)/);
+
+      let amount = 50.00;
+      if (amountMatch) {
+        amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+      }
+
+      return {
+        actionType: ACTION_TYPES.ISSUE_REFUND,
+        payload: {
+          orderId,
+          amount,
+          reason: `Customer support request: ${clean.substring(0, 100)}`
+        },
+        confidence: 0.94,
+        rawText: clean,
+        isInjectionDetected: isInjection
+      };
+    }
+
+    // 5. Account Transaction Refund Requests (Banking Legacy)
     // e.g., "Refund $50 for transaction tx_123", "Request refund 600 dollars"
     if (lower.includes('refund') || lower.includes('reversal')) {
       const amountMatch = clean.match(/\$?\s*(\d+(?:\.\d{1,2})?)/);
@@ -122,11 +152,62 @@ class DeterministicIntentExtractor {
         },
         confidence: 0.90,
         rawText: clean,
-        isInjectionDetected: false
+        isInjectionDetected: isInjection
       };
     }
 
-    // 5. Update Preferences
+    // 6. Customer Support: Get Customer Profile
+    // e.g., "Get my customer profile", "Show profile for cust_sarah_01", "View customer details"
+    if (lower.includes('profile') || lower.includes('customer details') || lower.includes('account profile')) {
+      const custMatch = clean.match(/cust_[a-zA-Z0-9_]+/);
+      return {
+        actionType: ACTION_TYPES.GET_CUSTOMER_PROFILE,
+        payload: {
+          customerId: custMatch ? custMatch[0] : (context.defaultCustomerId || 'cust_sarah_01')
+        },
+        confidence: 0.96,
+        rawText: clean,
+        isInjectionDetected: isInjection
+      };
+    }
+
+    // 7. Customer Support: Get Customer Orders
+    // e.g., "Show my orders", "List orders", "Get orders for cust_sarah_01", "Order history"
+    if (lower.includes('order') && (lower.includes('list') || lower.includes('show') || lower.includes('history') || lower.includes('get') || lower.includes('my orders'))) {
+      const custMatch = clean.match(/cust_[a-zA-Z0-9_]+/);
+      return {
+        actionType: ACTION_TYPES.GET_CUSTOMER_ORDERS,
+        payload: {
+          customerId: custMatch ? custMatch[0] : (context.defaultCustomerId || 'cust_sarah_01')
+        },
+        confidence: 0.95,
+        rawText: clean,
+        isInjectionDetected: isInjection
+      };
+    }
+
+    // 8. Customer Support: Update Subscription
+    // e.g., "Change subscription to basic", "Upgrade subscription to enterprise", "Update plan to pro"
+    if (lower.includes('subscription') || lower.includes('plan')) {
+      const subMatch = clean.match(/sub_[a-zA-Z0-9_]+/);
+      let newPlan = 'pro';
+      if (lower.includes('enterprise')) newPlan = 'enterprise';
+      else if (lower.includes('basic')) newPlan = 'basic';
+      else if (lower.includes('pro')) newPlan = 'pro';
+
+      return {
+        actionType: ACTION_TYPES.UPDATE_SUBSCRIPTION,
+        payload: {
+          subscriptionId: subMatch ? subMatch[0] : (context.defaultSubscriptionId || 'sub_sarah_pro'),
+          newPlan
+        },
+        confidence: 0.92,
+        rawText: clean,
+        isInjectionDetected: isInjection
+      };
+    }
+
+    // 9. Update Preferences
     // e.g., "Enable email alerts and dark theme", "Set theme to light"
     if (lower.includes('preference') || lower.includes('theme') || lower.includes('alert') || lower.includes('notification')) {
       const preferences = {};

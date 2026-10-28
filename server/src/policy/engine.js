@@ -12,6 +12,9 @@ const REASON_CODES = {
   INVALID_PAYLOAD: 'INVALID_PAYLOAD',
   AGENT_PERMISSION_DENIED: 'AGENT_PERMISSION_DENIED',
   ACCOUNT_NOT_FOUND: 'ACCOUNT_NOT_FOUND',
+  CUSTOMER_NOT_FOUND: 'CUSTOMER_NOT_FOUND',
+  ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
+  SUBSCRIPTION_NOT_FOUND: 'SUBSCRIPTION_NOT_FOUND',
   CROSS_TENANT_ACCESS_DENIED: 'CROSS_TENANT_ACCESS_DENIED',
   INSUFFICIENT_FUNDS: 'INSUFFICIENT_FUNDS',
   AMOUNT_EXCEEDS_MAX_LIMIT: 'AMOUNT_EXCEEDS_MAX_LIMIT',
@@ -20,6 +23,8 @@ const REASON_CODES = {
   SUPERVISOR_APPROVAL_REQUIRED: 'SUPERVISOR_APPROVAL_REQUIRED',
   RESTRICTED_FIELD_MODIFICATION: 'RESTRICTED_FIELD_MODIFICATION',
   UNAUTHORIZED_DATA_EXFILTRATION_RISK: 'UNAUTHORIZED_DATA_EXFILTRATION_RISK',
+  EXCEEDS_REFUNDABLE_BALANCE: 'EXCEEDS_REFUNDABLE_BALANCE',
+  ORDER_INELIGIBLE_FOR_REFUND: 'ORDER_INELIGIBLE_FOR_REFUND',
   IDEMPOTENCY_CONFLICT: 'IDEMPOTENCY_CONFLICT',
   POLICY_DISABLED: 'POLICY_DISABLED'
 };
@@ -314,6 +319,228 @@ class PolicyEngine {
         };
       }
 
+      case ACTION_TYPES.GET_CUSTOMER_PROFILE: {
+        const customer = this.getCustomer(cleanPayload.customerId);
+        if (!customer) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.CUSTOMER_NOT_FOUND,
+            policyId: policy?.id || 'policy_support_profile',
+            riskLevel: RISK_LEVELS.LOW,
+            requiresApproval: false,
+            message: `Customer profile "${cleanPayload.customerId}" not found.`,
+            details: null
+          };
+        }
+
+        if (customer.user_id !== user.id || customer.tenant_id !== user.tenantId) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.CROSS_TENANT_ACCESS_DENIED,
+            policyId: policy?.id || 'policy_support_profile',
+            riskLevel: RISK_LEVELS.CRITICAL,
+            requiresApproval: false,
+            message: `Cross-tenant or unauthorized customer access denied. Customer record does not belong to user "${user.id}".`,
+            details: { targetCustomerId: customer.id, targetTenant: customer.tenant_id, callerTenant: user.tenantId }
+          };
+        }
+
+        return {
+          decision: DECISIONS.ALLOW,
+          reasonCode: REASON_CODES.ALLOWED_BY_POLICY,
+          policyId: policy?.id || 'policy_support_profile',
+          riskLevel: RISK_LEVELS.LOW,
+          requiresApproval: false,
+          message: `Customer profile query authorized for record owner "${user.id}".`,
+          details: { customerId: customer.id, name: customer.name }
+        };
+      }
+
+      case ACTION_TYPES.GET_CUSTOMER_ORDERS: {
+        const customer = this.getCustomer(cleanPayload.customerId);
+        if (!customer) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.CUSTOMER_NOT_FOUND,
+            policyId: policy?.id || 'policy_support_orders',
+            riskLevel: RISK_LEVELS.LOW,
+            requiresApproval: false,
+            message: `Customer "${cleanPayload.customerId}" not found.`,
+            details: null
+          };
+        }
+
+        if (customer.user_id !== user.id || customer.tenant_id !== user.tenantId) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.CROSS_TENANT_ACCESS_DENIED,
+            policyId: policy?.id || 'policy_support_orders',
+            riskLevel: RISK_LEVELS.CRITICAL,
+            requiresApproval: false,
+            message: `Cross-tenant access denied: Orders for "${cleanPayload.customerId}" do not belong to caller "${user.id}".`,
+            details: { targetTenant: customer.tenant_id, callerTenant: user.tenantId }
+          };
+        }
+
+        return {
+          decision: DECISIONS.ALLOW,
+          reasonCode: REASON_CODES.ALLOWED_BY_POLICY,
+          policyId: policy?.id || 'policy_support_orders',
+          riskLevel: RISK_LEVELS.LOW,
+          requiresApproval: false,
+          message: `Customer orders query authorized for customer "${customer.id}".`,
+          details: { customerId: customer.id }
+        };
+      }
+
+      case ACTION_TYPES.ISSUE_REFUND: {
+        const order = this.getOrder(cleanPayload.orderId);
+        if (!order) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.ORDER_NOT_FOUND,
+            policyId: policy?.id || 'policy_support_refund',
+            riskLevel: RISK_LEVELS.MEDIUM,
+            requiresApproval: false,
+            message: `Order "${cleanPayload.orderId}" not found.`,
+            details: null
+          };
+        }
+
+        const customer = this.getCustomer(order.customer_id);
+        if (!customer || customer.user_id !== user.id || order.tenant_id !== user.tenantId) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.CROSS_TENANT_ACCESS_DENIED,
+            policyId: policy?.id || 'policy_support_refund',
+            riskLevel: RISK_LEVELS.CRITICAL,
+            requiresApproval: false,
+            message: `Access denied: Order "${cleanPayload.orderId}" does not belong to authorized user "${user.id}".`,
+            details: { orderTenant: order.tenant_id, callerTenant: user.tenantId }
+          };
+        }
+
+        // Eligibility check
+        if (order.status === 'REFUNDED' || order.status === 'CANCELLED') {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.ORDER_INELIGIBLE_FOR_REFUND,
+            policyId: policy?.id || 'policy_support_refund',
+            riskLevel: RISK_LEVELS.MEDIUM,
+            requiresApproval: false,
+            message: `Order "${cleanPayload.orderId}" is ineligible for refund (status: ${order.status}).`,
+            details: { orderStatus: order.status }
+          };
+        }
+
+        const amount = Number(cleanPayload.amount);
+        const remainingRefundable = Math.round((order.total_amount - order.refunded_amount) * 100) / 100;
+
+        // Refundable balance check
+        if (amount > remainingRefundable) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.EXCEEDS_REFUNDABLE_BALANCE,
+            policyId: policy?.id || 'policy_support_refund',
+            riskLevel: RISK_LEVELS.HIGH,
+            requiresApproval: false,
+            message: `Refund rejected: Requested amount ($${amount.toFixed(2)}) exceeds remaining refundable balance ($${remainingRefundable.toFixed(2)}).`,
+            details: { requestedAmount: amount, remainingRefundable, totalAmount: order.total_amount, alreadyRefunded: order.refunded_amount }
+          };
+        }
+
+        const rules = policy?.rules || {
+          maxSingleAmount: 1000.00,
+          stepUpThreshold: 150.00
+        };
+
+        // Ceiling Limit Check
+        if (amount > rules.maxSingleAmount) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.AMOUNT_EXCEEDS_MAX_LIMIT,
+            policyId: policy?.id || 'policy_support_refund',
+            riskLevel: RISK_LEVELS.HIGH,
+            requiresApproval: false,
+            message: `Refund rejected: Amount ($${amount.toFixed(2)}) exceeds maximum allowable refund limit ($${rules.maxSingleAmount.toFixed(2)}).`,
+            details: { maxLimit: rules.maxSingleAmount, requestedAmount: amount }
+          };
+        }
+
+        // Tiered Step-up Threshold (Amount > $150.00)
+        if (amount > rules.stepUpThreshold) {
+          return {
+            decision: DECISIONS.VERIFY,
+            reasonCode: REASON_CODES.STEP_UP_VERIFICATION_REQUIRED,
+            policyId: policy?.id || 'policy_support_refund',
+            riskLevel: RISK_LEVELS.HIGH,
+            requiresApproval: true,
+            message: `Step-up verification required: Refund of $${amount.toFixed(2)} exceeds automated approval limit ($${rules.stepUpThreshold.toFixed(2)}).`,
+            details: { threshold: rules.stepUpThreshold, requestedAmount: amount }
+          };
+        }
+
+        return {
+          decision: DECISIONS.ALLOW,
+          reasonCode: REASON_CODES.ALLOWED_BY_POLICY,
+          policyId: policy?.id || 'policy_support_refund',
+          riskLevel: RISK_LEVELS.LOW,
+          requiresApproval: false,
+          message: `Refund of $${amount.toFixed(2)} within automated approval threshold for order "${order.id}".`,
+          details: { orderId: order.id, amount }
+        };
+      }
+
+      case ACTION_TYPES.UPDATE_SUBSCRIPTION: {
+        const sub = this.getSubscription(cleanPayload.subscriptionId);
+        if (!sub) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.SUBSCRIPTION_NOT_FOUND,
+            policyId: policy?.id || 'policy_support_subscription',
+            riskLevel: RISK_LEVELS.MEDIUM,
+            requiresApproval: false,
+            message: `Subscription "${cleanPayload.subscriptionId}" not found.`,
+            details: null
+          };
+        }
+
+        const customer = this.getCustomer(sub.customer_id);
+        if (!customer || customer.user_id !== user.id || sub.tenant_id !== user.tenantId) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.CROSS_TENANT_ACCESS_DENIED,
+            policyId: policy?.id || 'policy_support_subscription',
+            riskLevel: RISK_LEVELS.CRITICAL,
+            requiresApproval: false,
+            message: `Access denied: Subscription does not belong to authorized user "${user.id}".`,
+            details: { subscriptionTenant: sub.tenant_id, callerTenant: user.tenantId }
+          };
+        }
+
+        if (cleanPayload.newPlan === 'enterprise') {
+          return {
+            decision: DECISIONS.VERIFY,
+            reasonCode: REASON_CODES.SUPERVISOR_APPROVAL_REQUIRED,
+            policyId: policy?.id || 'policy_support_subscription',
+            riskLevel: RISK_LEVELS.MEDIUM,
+            requiresApproval: true,
+            message: 'Subscription upgrade to "enterprise" tier requires supervisor verification.',
+            details: { subscriptionId: sub.id, currentPlan: sub.plan, requestedPlan: cleanPayload.newPlan }
+          };
+        }
+
+        return {
+          decision: DECISIONS.ALLOW,
+          reasonCode: REASON_CODES.ALLOWED_BY_POLICY,
+          policyId: policy?.id || 'policy_support_subscription',
+          riskLevel: RISK_LEVELS.LOW,
+          requiresApproval: false,
+          message: `Subscription plan change to "${cleanPayload.newPlan}" authorized.`,
+          details: { subscriptionId: sub.id, newPlan: cleanPayload.newPlan }
+        };
+      }
+
       default:
         return {
           decision: DECISIONS.DENY,
@@ -338,6 +565,30 @@ class PolicyEngine {
   getRecipient(recipientId) {
     try {
       return this.db.prepare('SELECT * FROM recipients WHERE id = ?').get(recipientId);
+    } catch {
+      return null;
+    }
+  }
+
+  getCustomer(customerId) {
+    try {
+      return this.db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+    } catch {
+      return null;
+    }
+  }
+
+  getOrder(orderId) {
+    try {
+      return this.db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+    } catch {
+      return null;
+    }
+  }
+
+  getSubscription(subscriptionId) {
+    try {
+      return this.db.prepare('SELECT * FROM subscriptions WHERE id = ?').get(subscriptionId);
     } catch {
       return null;
     }

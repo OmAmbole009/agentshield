@@ -7,6 +7,7 @@ import PolicyCenter from './views/PolicyCenter';
 import AuditExplorer from './views/AuditExplorer';
 import ProviderUsage from './views/ProviderUsage';
 import SecurityTestLab from './views/SecurityTestLab';
+import CustomerSupportAgent from './views/CustomerSupportAgent';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -90,6 +91,7 @@ export default function App() {
   const viewTitles = {
     overview: 'Security Operations & Intelligence Overview',
     playground: 'AgentShield Live Agent Playground',
+    support: 'AI Customer Support Agent Security Guard',
     policies: 'Runtime Policy & Authorization Center',
     audit: 'Tamper-Evident Cryptographic Audit Trail',
     provider: 'Gnani Platform Telemetry & Budget Guard',
@@ -129,6 +131,14 @@ export default function App() {
             <LivePlayground
               currentUser={currentUser}
               onSecurityEvent={fetchAllData}
+            />
+          )}
+
+          {activeTab === 'support' && (
+            <CustomerSupportAgent
+              currentUser={currentUser}
+              onSecurityEvent={fetchAllData}
+              setActiveTab={setActiveTab}
             />
           )}
 

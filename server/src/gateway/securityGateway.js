@@ -10,6 +10,7 @@ class SecurityGateway {
     challengeService,
     auditLogger,
     bankingService,
+    customerSupportService,
     intentExtractor,
     gnaniAdapter
   }) {
@@ -18,6 +19,7 @@ class SecurityGateway {
     this.challengeService = challengeService;
     this.auditLogger = auditLogger;
     this.bankingService = bankingService;
+    this.customerSupportService = customerSupportService;
     this.intentExtractor = intentExtractor;
     this.gnaniAdapter = gnaniAdapter;
   }
@@ -428,6 +430,37 @@ class SecurityGateway {
           user
         });
 
+      case ACTION_TYPES.GET_CUSTOMER_PROFILE:
+        return this.customerSupportService.getCustomerProfile({
+          customerId: payload.customerId,
+          user
+        });
+
+      case ACTION_TYPES.GET_CUSTOMER_ORDERS:
+        return this.customerSupportService.getCustomerOrders({
+          customerId: payload.customerId,
+          user
+        });
+
+      case ACTION_TYPES.ISSUE_REFUND:
+        return this.customerSupportService.issueRefund({
+          orderId: payload.orderId,
+          amount: payload.amount,
+          reason: payload.reason,
+          idempotencyKey,
+          user,
+          approvalId,
+          simulateFailure: payload.simulateFailure || false
+        });
+
+      case ACTION_TYPES.UPDATE_SUBSCRIPTION:
+        return this.customerSupportService.updateSubscription({
+          subscriptionId: payload.subscriptionId,
+          newPlan: payload.newPlan,
+          cancelAtPeriodEnd: payload.cancelAtPeriodEnd,
+          user
+        });
+
       default:
         throw new Error(`Cannot execute unsupported action: ${actionType}`);
     }
@@ -446,6 +479,17 @@ class SecurityGateway {
         return `Refund request of $${result.transaction.amount.toFixed(2)} processed successfully. New balance: $${result.transaction.newBalance.toFixed(2)}.`;
       case ACTION_TYPES.UPDATE_PREFERENCE:
         return 'Account preferences updated successfully.';
+      case ACTION_TYPES.GET_CUSTOMER_PROFILE:
+        return `Customer profile for ${result.name} (${result.tier} tier) retrieved successfully.`;
+      case ACTION_TYPES.GET_CUSTOMER_ORDERS:
+        return `Retrieved ${result.orders.length} order(s) for customer ${result.customerName}.`;
+      case ACTION_TYPES.ISSUE_REFUND:
+        if (result.isReplay) {
+          return `Refund of $${result.refund.amount.toFixed(2)} for order ${result.refund.order_id} was previously completed (idempotent replay recognized).`;
+        }
+        return `Successfully issued refund of $${result.refund.amount.toFixed(2)} for order ${result.order.id}. Remaining refundable balance: $${result.order.remainingRefundable.toFixed(2)}.`;
+      case ACTION_TYPES.UPDATE_SUBSCRIPTION:
+        return `Subscription ${result.subscription.id} plan updated to "${result.newPlan}".`;
       default:
         return 'Operation completed successfully.';
     }
