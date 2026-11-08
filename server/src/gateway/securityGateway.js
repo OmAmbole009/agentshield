@@ -97,7 +97,7 @@ class SecurityGateway {
       // Extract intent from text
       proposal = await this.intentExtractor.extractProposal(recognizedText || '', {
         userId: user?.id,
-        defaultAccountId: 'acc_sarah_checking'
+        defaultAccountId: this.bankingService.getUserAccounts(user?.id)?.[0]?.id || 'acc_sarah_checking'
       });
     }
 
@@ -392,6 +392,22 @@ class SecurityGateway {
     }
   }
 
+  rejectPendingApproval({ challengeId, user, agent }) {
+    const requestId = `req_reject_${crypto.randomUUID().replace(/-/g, '')}`;
+    const rejected = this.challengeService.rejectPendingChallenge({ challengeId, userId: user?.id });
+    this.auditLogger.logEvent({
+      requestId,
+      eventType: rejected ? AUDIT_EVENT_TYPES.VERIFICATION_REJECTED : AUDIT_EVENT_TYPES.VERIFICATION_FAILED,
+      agentId: agent?.id,
+      userId: user?.id,
+      reasonCode: rejected ? 'APPROVAL_REJECTED' : 'APPROVAL_NOT_PENDING_OR_NOT_OWNED',
+      payload: { challengeId }
+    });
+    return rejected
+      ? { success: true, status: 'REJECTED', message: 'Pending action rejected. No tool was executed.' }
+      : { success: false, status: 'UNCHANGED', error: 'Pending approval not found for this user.' };
+  }
+
   /**
    * Internal dispatcher to authorized business operations
    */
@@ -400,6 +416,13 @@ class SecurityGateway {
       case ACTION_TYPES.READ_BALANCE:
         return this.bankingService.readBalance({
           accountId: payload.accountId,
+          user
+        });
+
+      case ACTION_TYPES.READ_TRANSACTIONS:
+        return this.bankingService.getAccountTransactionHistory({
+          accountId: payload.accountId,
+          limit: payload.limit,
           user
         });
 
@@ -470,6 +493,8 @@ class SecurityGateway {
     switch (actionType) {
       case ACTION_TYPES.READ_BALANCE:
         return `Your current balance in account ${result.accountNumber} is $${result.balance.toFixed(2)} ${result.currency}.`;
+      case ACTION_TYPES.READ_TRANSACTIONS:
+        return `Retrieved ${result.transactions.length} transaction(s) for account ${result.accountNumber}.`;
       case ACTION_TYPES.TRANSFER_FUNDS:
         if (result.isReplay) {
           return `Transfer of $${result.transaction.amount.toFixed(2)} to ${result.transaction.recipient_name} was previously completed (idempotency key recognized).`;

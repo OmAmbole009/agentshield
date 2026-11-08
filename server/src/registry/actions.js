@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const {
   ReadBalanceSchema,
+  ReadTransactionsSchema,
   TransferFundsSchema,
   RequestRefundSchema,
   UpdatePreferenceSchema,
@@ -13,6 +14,7 @@ const {
 
 const ACTION_TYPES = {
   READ_BALANCE: 'READ_BALANCE',
+  READ_TRANSACTIONS: 'READ_TRANSACTIONS',
   TRANSFER_FUNDS: 'TRANSFER_FUNDS',
   REQUEST_REFUND: 'REQUEST_REFUND',
   UPDATE_PREFERENCE: 'UPDATE_PREFERENCE',
@@ -41,6 +43,17 @@ const ACTION_REGISTRY = {
     isMutating: false,
     requiresApprovalDefault: false,
     getCanonicalParams: (p) => ({ accountId: p.accountId })
+  },
+  [ACTION_TYPES.READ_TRANSACTIONS]: {
+    type: ACTION_TYPES.READ_TRANSACTIONS,
+    name: 'Read Account Transaction History',
+    description: 'Lists recent transactions on an authorized account',
+    riskLevel: RISK_LEVELS.LOW,
+    requiredPermission: 'accounts:read',
+    schema: ReadTransactionsSchema,
+    isMutating: false,
+    requiresApprovalDefault: false,
+    getCanonicalParams: (p) => ({ accountId: p.accountId, limit: p.limit })
   },
   [ACTION_TYPES.TRANSFER_FUNDS]: {
     type: ACTION_TYPES.TRANSFER_FUNDS,

@@ -14,8 +14,9 @@ function createAuditRouter({ auditLogger }) {
       const eventType = req.query.eventType || null;
       const decision = req.query.decision || null;
       const actionType = req.query.actionType || null;
+      const userId = req.user?.role === 'admin' ? null : req.user?.id;
 
-      const events = auditLogger.getEvents({ limit, offset, eventType, decision, actionType });
+      const events = auditLogger.getEvents({ limit, offset, eventType, decision, actionType, userId });
       res.json({
         success: true,
         total: events.length,

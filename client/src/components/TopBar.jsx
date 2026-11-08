@@ -7,7 +7,8 @@ export default function TopBar({
   setCurrentUser,
   systemHealth,
   budgetSummary,
-  onResetDb
+  onResetDb,
+  resetting = false
 }) {
   const users = [
     { id: 'usr_sarah_01', name: 'Sarah Connor', tenantId: 'tenant_retail', role: 'customer' },
@@ -24,28 +25,30 @@ export default function TopBar({
 
       <div className="top-bar-actions">
         {/* Gateway Health Indicator */}
-        <div className="status-pill">
-          <span className="status-dot"></span>
-          <span>Gateway Active</span>
+        <div className="status-pill" title="Live health check from the AgentShield backend">
+          <span className={`status-dot ${systemHealth?.status !== 'HEALTHY' ? 'amber' : ''}`}></span>
+          <span>{!systemHealth ? 'Checking gateway…' : systemHealth.status === 'HEALTHY' ? 'Gateway ready' : 'Gateway unavailable'}</span>
         </div>
 
         {/* Gnani Voice Status */}
         <div className="status-pill">
           <Mic size={14} color="#00c2a8" />
-          <span>Gnani Voice: {systemHealth?.gnani?.enabled ? 'LIVE' : 'MOCK (Safe Default)'}</span>
+          <span>AI: {systemHealth?.gnani?.enabled ? 'Live configured' : 'Local simulation'}</span>
         </div>
 
         {/* Credit Budget Guard Pill */}
         <div className="status-pill">
           <span style={{ color: '#00c2a8', fontWeight: 700 }}>
-            {budgetSummary ? `${budgetSummary.remainingUsable} / ${budgetSummary.usableBudget} Credits` : '5,000 Credits'}
+            {budgetSummary ? `${budgetSummary.remainingUsable} usable credits` : 'Budget loading'}
           </span>
         </div>
 
         {/* User Identity Switcher for Security Boundary Testing */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <User size={15} color="#94a3b8" />
+          <User size={15} color="#94a3b8" aria-hidden="true" />
+          <label className="demo-user-label" htmlFor="demo-user">Demo identity</label>
           <select
+            id="demo-user"
             className="input"
             style={{ width: 'auto', padding: '5px 10px', fontSize: '0.8rem', height: '32px' }}
             value={currentUser.id + '-' + currentUser.role}
@@ -65,11 +68,12 @@ export default function TopBar({
         {/* Reset Database Button */}
         <button
           className="btn btn-secondary btn-sm"
-          title="Reset database to seeded demo records"
+          title="Restore the local demo accounts and clear demo activity"
+          disabled={resetting}
           onClick={onResetDb}
         >
           <RotateCcw size={14} />
-          <span>Reset Demo</span>
+          <span>{resetting ? 'Resetting…' : 'Reset demo'}</span>
         </button>
       </div>
     </header>

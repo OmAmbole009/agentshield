@@ -6,20 +6,25 @@ export default function SecurityTestLab({ onSecurityEvent }) {
   const [results, setResults] = useState({});
   const [runningAll, setRunningAll] = useState(false);
   const [runningSingle, setRunningSingle] = useState(null);
+  const [loadingScenarios, setLoadingScenarios] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchScenarios();
   }, []);
 
   const fetchScenarios = async () => {
+    setLoadingScenarios(true);
+    setError('');
     try {
       const res = await fetch('/api/scenarios');
       const data = await res.json();
-      if (data.success) {
-        setScenarios(data.scenarios);
-      }
+      if (!res.ok || !data.success) throw new Error(data.error || `Scenario list failed (${res.status}).`);
+      setScenarios(data.scenarios || []);
     } catch (e) {
-      console.warn('Failed to load scenarios:', e);
+      setError(e.message);
+    } finally {
+      setLoadingScenarios(false);
     }
   };
 
@@ -31,12 +36,14 @@ export default function SecurityTestLab({ onSecurityEvent }) {
         headers: { 'Content-Type': 'application/json' }
       });
       const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || `Scenario failed (${res.status}).`);
       setResults(prev => ({
         ...prev,
         [scenarioId]: data
       }));
       if (onSecurityEvent) onSecurityEvent();
     } catch (e) {
+      setError(e.message);
       setResults(prev => ({
         ...prev,
         [scenarioId]: { passed: false, explanation: `Execution error: ${e.message}` }
@@ -54,6 +61,7 @@ export default function SecurityTestLab({ onSecurityEvent }) {
         headers: { 'Content-Type': 'application/json' }
       });
       const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || `Scenario run failed (${res.status}).`);
       if (data.results) {
         const mapped = {};
         for (const item of data.results) {
@@ -63,7 +71,7 @@ export default function SecurityTestLab({ onSecurityEvent }) {
       }
       if (onSecurityEvent) onSecurityEvent();
     } catch (e) {
-      console.warn('Failed to run all scenarios:', e);
+      setError(e.message);
     } finally {
       setRunningAll(false);
     }
@@ -83,7 +91,7 @@ export default function SecurityTestLab({ onSecurityEvent }) {
               <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Security Test Lab — Scenarios A through H</h2>
             </div>
             <p style={{ fontSize: '0.86rem', color: '#94a3b8' }}>
-              Execute actual adversarial regression and policy validation suites against the live security gateway. Every result represents a verified backend execution.
+              These checks call the backend security gateway. They use seeded Sarah demo data. The replay check makes one simulated $50 transfer; select <strong>Reset demo</strong> before recording again. No real funds move.
             </p>
           </div>
 
@@ -105,8 +113,12 @@ export default function SecurityTestLab({ onSecurityEvent }) {
         </div>
       </div>
 
+      {error && <div className="app-error" role="alert">{error}<button className="btn btn-secondary btn-sm" onClick={fetchScenarios}>Retry</button></div>}
+
       {/* Scenarios Grid */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {loadingScenarios && <div className="card" aria-live="polite">Loading security checks…</div>}
+        {!loadingScenarios && scenarios.length === 0 && !error && <div className="card">No security scenarios are configured.</div>}
         {scenarios.map(sc => {
           const result = results[sc.id];
           const isRunning = runningSingle === sc.id || runningAll;

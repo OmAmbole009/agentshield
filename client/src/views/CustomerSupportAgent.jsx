@@ -25,6 +25,7 @@ export default function CustomerSupportAgent({ currentUser, onSecurityEvent, set
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
   const [error, setError] = useState(null);
+  const [dataError, setDataError] = useState('');
 
   // Step-up verification modal state
   const [showVerifyModal, setShowVerifyModal] = useState(false);
@@ -42,30 +43,57 @@ export default function CustomerSupportAgent({ currentUser, onSecurityEvent, set
   }, [currentUser]);
 
   const fetchSupportData = async () => {
+    setDataError('');
     try {
-      const custRes = await fetch('/api/support/customers?all=true');
-      if (custRes.ok) {
-        const custData = await custRes.json();
-        setCustomers(custData.customers || []);
-      }
+      const identityHeaders = { 'X-User-Id': currentUser.id };
+      const custRes = await fetch('/api/support/customers', { headers: identityHeaders });
+      if (!custRes.ok) throw new Error(`Customer list request failed (${custRes.status}).`);
+      const custData = await custRes.json();
+      const nextCustomers = custData.customers || [];
+      setCustomers(nextCustomers);
+      if (nextCustomers.length && !nextCustomers.some(c => c.id === selectedCustomerId)) setSelectedCustomerId(nextCustomers[0].id);
 
-      const ordRes = await fetch('/api/support/orders?all=true');
-      if (ordRes.ok) {
-        const ordData = await ordRes.json();
-        setOrders(ordData.orders || []);
-        const defaultOrd = (ordData.orders || []).find(o => o.id === selectedOrderId);
-        if (defaultOrd) {
-          setBeforeOrderState(defaultOrd);
-          setAfterOrderState(defaultOrd);
-        }
+      const ordRes = await fetch('/api/support/orders', { headers: identityHeaders });
+      if (!ordRes.ok) throw new Error(`Order list request failed (${ordRes.status}).`);
+      const ordData = await ordRes.json();
+      const nextOrders = ordData.orders || [];
+      setOrders(nextOrders);
+      const defaultOrd = nextOrders.find(o => o.id === selectedOrderId) || nextOrders[0];
+      if (defaultOrd) {
+        setSelectedOrderId(defaultOrd.id);
+        setBeforeOrderState(defaultOrd);
+        setAfterOrderState(defaultOrd);
       }
     } catch (err) {
-      console.warn('Failed to load support data:', err);
+      setDataError(err.message);
+    }
+  };
+
+  const handleRejectApproval = async () => {
+    if (!activeChallenge) return;
+    setVerifyLoading(true);
+    setVerifyResult(null);
+    try {
+      const res = await fetch('/api/gateway/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': currentUser.id, 'X-Agent-Id': 'customer-support-agent' },
+        body: JSON.stringify({ challengeId: activeChallenge.challengeId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not reject this request.');
+      setVerifyResult({ success: false, rejected: true, error: data.message });
+      setResponse(prev => ({ ...prev, decision: 'DENY', requiresApproval: false, responseText: data.message, executionResult: null }));
+      onSecurityEvent?.();
+    } catch (err) {
+      setVerifyResult({ success: false, error: err.message });
+    } finally {
+      setVerifyLoading(false);
     }
   };
 
   const selectedOrder = orders.find(o => o.id === selectedOrderId) || null;
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId) || null;
+  const isPrimaryDemoUser = currentUser.id === 'usr_sarah_01';
 
   const quickScenarios = [
     {
@@ -241,6 +269,7 @@ export default function CustomerSupportAgent({ currentUser, onSecurityEvent, set
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {dataError && <div className="app-error" role="alert">Could not load support demo data: {dataError}<button className="btn btn-secondary btn-sm" onClick={fetchSupportData}>Retry</button></div>}
       {/* Header Info Card */}
       <div className="card">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
@@ -267,6 +296,7 @@ export default function CustomerSupportAgent({ currentUser, onSecurityEvent, set
         <div style={{ fontSize: '0.86rem', fontWeight: 600, color: '#94a3b8', marginBottom: '12px' }}>
           Interactive Support Scenarios (Click to Execute):
         </div>
+        {!isPrimaryDemoUser && <p style={{ marginBottom: 12, color: 'var(--color-verify)', fontSize: '0.8rem' }}>These scripted examples use Sarah’s seeded customer records. Switch the demo identity to Sarah Connor to run them, or use the form below with this user’s own orders.</p>}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           {quickScenarios.map((sc, idx) => {
             let catColor = 'var(--teal-accent)';
@@ -278,6 +308,7 @@ export default function CustomerSupportAgent({ currentUser, onSecurityEvent, set
                 key={idx}
                 className="btn btn-secondary btn-sm"
                 style={{ fontSize: '0.78rem' }}
+                disabled={loading || !isPrimaryDemoUser}
                 onClick={() => {
                   setInputText(sc.text);
                   setSelectedOrderId(sc.targetOrder);
@@ -536,15 +567,15 @@ export default function CustomerSupportAgent({ currentUser, onSecurityEvent, set
           <div className="modal-card">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
               <Lock size={22} color="var(--color-verify)" />
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Step-Up Verification Challenge</h2>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Your approval is needed</h2>
             </div>
 
             <p style={{ fontSize: '0.86rem', color: '#94a3b8', marginBottom: '16px' }}>
-              Action: <strong>{activeChallenge.actionType}</strong>. To authorize execution, enter your single-use 6-digit confirmation code.
+              AgentShield paused this request. Approve it to run the simulated refund, or reject it to cancel.
             </p>
 
             <div style={{ padding: '12px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', marginBottom: '16px', fontSize: '0.8rem', color: '#94a3b8' }}>
-              <div>Demo Challenge Code: <strong style={{ color: '#fff', fontSize: '1rem', letterSpacing: '0.15em' }}>{activeChallenge.code}</strong></div>
+              <div>Demo approval code: <strong style={{ color: '#fff', fontSize: '1rem', letterSpacing: '0.15em' }}>{activeChallenge.code}</strong></div>
               <div style={{ fontSize: '0.74rem', marginTop: '4px' }}>
                 Cryptographically bound to order: <strong>{activeChallenge.proposal?.payload?.orderId}</strong> for <strong>${activeChallenge.proposal?.payload?.amount}</strong>
               </div>
@@ -570,7 +601,7 @@ export default function CustomerSupportAgent({ currentUser, onSecurityEvent, set
                   </div>
                 ) : (
                   <div>
-                    <div style={{ fontWeight: 600 }}>Verification Rejected: {verifyResult.errorCode || 'FAILED'}</div>
+                    <div style={{ fontWeight: 600 }}>{verifyResult.rejected ? 'Request rejected' : `Verification rejected: ${verifyResult.errorCode || 'FAILED'}`}</div>
                     <div style={{ fontSize: '0.78rem', marginTop: '4px' }}>{verifyResult.error}</div>
                   </div>
                 )}
@@ -584,7 +615,10 @@ export default function CustomerSupportAgent({ currentUser, onSecurityEvent, set
                   style={{ flex: 1 }}
                   onClick={() => setShowVerifyModal(false)}
                 >
-                  Close
+                  Leave pending
+                </button>
+                <button className="btn btn-danger" style={{ flex: 1 }} disabled={verifyLoading} onClick={handleRejectApproval}>
+                  Reject request
                 </button>
                 <button
                   className="btn btn-primary"
@@ -596,15 +630,13 @@ export default function CustomerSupportAgent({ currentUser, onSecurityEvent, set
                 </button>
               </div>
 
-              {/* Anti-Tampering Test Button */}
-              <button
-                className="btn btn-danger btn-sm"
-                title="Test parameter tampering by secretly raising refund to $500.00 before submitting OTP"
-                onClick={() => handleVerifySubmit(500.00)}
-              >
-                <ShieldAlert size={14} />
-                <span>Simulate Parameter Tampering Attack (Raise to $500)</span>
-              </button>
+              <details className="security-extra-test">
+                <summary>Optional security test</summary>
+                <p>Changes the requested refund amount and should invalidate the challenge. Use only to demonstrate tamper protection.</p>
+                <button className="btn btn-danger btn-sm" disabled={verifyLoading} onClick={() => handleVerifySubmit(500.00)}>
+                  <ShieldAlert size={14} /><span>Test parameter tampering</span>
+                </button>
+              </details>
             </div>
           </div>
         </div>
@@ -612,3 +644,4 @@ export default function CustomerSupportAgent({ currentUser, onSecurityEvent, set
     </div>
   );
 }
+

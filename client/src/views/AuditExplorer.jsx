@@ -24,6 +24,7 @@ export default function AuditExplorer({ auditEvents, onRefresh }) {
     try {
       const res = await fetch('/api/audit/verify-chain');
       const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || `Chain check failed (${res.status}).`);
       setChainReport(data.report);
     } catch (err) {
       setChainReport({
@@ -49,6 +50,7 @@ export default function AuditExplorer({ auditEvents, onRefresh }) {
     }
     return true;
   });
+  const availableActions = [...new Set(auditEvents.map(evt => evt.action_type).filter(Boolean))].sort();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -128,20 +130,17 @@ export default function AuditExplorer({ auditEvents, onRefresh }) {
             </select>
 
             <select
+              aria-label="Filter by action"
               className="input"
               style={{ width: 'auto' }}
               value={filterAction}
               onChange={(e) => setFilterAction(e.target.value)}
             >
               <option value="ALL">All Actions</option>
-              <option value="READ_BALANCE">READ_BALANCE</option>
-              <option value="TRANSFER_FUNDS">TRANSFER_FUNDS</option>
-              <option value="REQUEST_REFUND">REQUEST_REFUND</option>
-              <option value="UPDATE_PREFERENCE">UPDATE_PREFERENCE</option>
-              <option value="EXPORT_CUSTOMER_DATA">EXPORT_CUSTOMER_DATA</option>
+              {availableActions.map(action => <option key={action} value={action}>{action.replaceAll('_', ' ')}</option>)}
             </select>
 
-            <button className="btn btn-secondary" onClick={onRefresh}>
+              <button className="btn btn-secondary" onClick={onRefresh}>
               <RefreshCw size={14} />
               <span>Refresh</span>
             </button>
@@ -170,6 +169,7 @@ export default function AuditExplorer({ auditEvents, onRefresh }) {
               </tr>
             </thead>
             <tbody>
+              {filteredEvents.length === 0 && <tr><td colSpan="8" style={{ padding: 28, textAlign: 'center', color: 'var(--text-muted)' }}>No audit events match these filters. Run an example action or clear the filters.</td></tr>}
               {filteredEvents.map(evt => {
                 let badgeClass = 'badge-subtle';
                 if (evt.decision === 'ALLOW') badgeClass = 'badge-allow';

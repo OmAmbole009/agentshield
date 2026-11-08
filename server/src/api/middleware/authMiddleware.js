@@ -7,10 +7,36 @@
  *   - X-Tenant-Id: e.g., 'tenant_retail', 'tenant_external'
  *   - X-Agent-Id: e.g., 'voice-assistant-agent', 'untrusted-agent'
  */
+const DEMO_IDENTITIES = Object.freeze({
+  usr_sarah_01: { name: 'Sarah Connor', tenantId: 'tenant_retail', role: 'customer' },
+  usr_michael_02: { name: 'Michael Scott', tenantId: 'tenant_retail', role: 'customer' },
+  usr_alex_03: { name: 'Alex Thorne', tenantId: 'tenant_external', role: 'customer' },
+  usr_admin: { name: 'Security Admin', tenantId: 'tenant_retail', role: 'admin' }
+});
+
 function authMiddleware(req, res, next) {
+  // Header-selected identities are a local demonstration convenience, not authentication.
+  // Never run this identity shim in production; install a real authentication middleware.
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(503).json({
+      success: false,
+      error: 'Production authentication is not configured.',
+      errorCode: 'AUTHENTICATION_NOT_CONFIGURED'
+    });
+  }
+
   const userId = req.headers['x-user-id'] || 'usr_sarah_01';
-  const tenantId = req.headers['x-tenant-id'] || (userId === 'usr_alex_03' ? 'tenant_external' : 'tenant_retail');
-  const role = req.headers['x-user-role'] || 'customer';
+  const identity = DEMO_IDENTITIES[userId];
+  if (!identity) {
+    return res.status(401).json({
+      success: false,
+      error: 'Unknown demo identity.',
+      errorCode: 'UNKNOWN_DEMO_IDENTITY'
+    });
+  }
+
+  // Tenant and role are server-owned. Ignore caller-supplied X-Tenant-Id and X-User-Role.
+  const { tenantId, role, name } = identity;
   const agentId = req.headers['x-agent-id'] || 'voice-assistant-agent';
 
   // Agent permissions
@@ -34,7 +60,7 @@ function authMiddleware(req, res, next) {
 
   req.user = {
     id: userId,
-    name: userId === 'usr_sarah_01' ? 'Sarah Connor' : (userId === 'usr_michael_02' ? 'Michael Scott' : 'Alex Thorne'),
+    name,
     tenantId,
     role,
     permissions: role === 'admin' ? ['*'] : ['accounts:read', 'transfers:execute', 'preferences:write', 'customers:read', 'orders:read']
@@ -50,5 +76,6 @@ function authMiddleware(req, res, next) {
 }
 
 module.exports = {
-  authMiddleware
+  authMiddleware,
+  DEMO_IDENTITIES
 };

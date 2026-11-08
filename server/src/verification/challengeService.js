@@ -211,6 +211,15 @@ class ChallengeService {
   getChallenge(challengeId) {
     return this.db.prepare('SELECT * FROM verification_challenges WHERE id = ?').get(challengeId);
   }
+
+  rejectPendingChallenge({ challengeId, userId }) {
+    const result = this.db.prepare(`
+      UPDATE verification_challenges
+      SET status = ?, consumed_at = ?
+      WHERE id = ? AND user_id = ? AND status = ?
+    `).run(CHALLENGE_STATUS.INVALIDATED, new Date().toISOString(), challengeId, userId, CHALLENGE_STATUS.PENDING);
+    return result.changes === 1;
+  }
 }
 
 module.exports = {

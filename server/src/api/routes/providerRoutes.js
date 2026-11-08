@@ -26,6 +26,9 @@ function createProviderRouter({ budgetGuard, gnaniAdapter }) {
   router.post('/test-speech', async (req, res, next) => {
     try {
       const { text = 'AgentShield security gateway online.' } = req.body;
+      if (typeof text !== 'string' || !text.trim() || text.length > 1000) {
+        return res.status(400).json({ success: false, error: 'Text must contain 1–1000 characters.', errorCode: 'INVALID_SPEECH_TEXT' });
+      }
       const result = await gnaniAdapter.synthesizeSpeech(text, {
         voice: 'Nalini',
         model: 'timbre-v2.5'

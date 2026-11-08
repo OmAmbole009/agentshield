@@ -16,6 +16,7 @@ export default function ProviderUsage({ budgetSummary, systemHealth, onRefresh }
         body: JSON.stringify({ text: testSpeechText })
       });
       const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || `Speech request failed (${res.status}).`);
       setTestResult(data);
       if (onRefresh) onRefresh();
     } catch (err) {
@@ -51,7 +52,7 @@ export default function ProviderUsage({ budgetSummary, systemHealth, onRefresh }
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
             <span className={`badge ${budget.isLiveEnabled ? 'badge-allow' : 'badge-subtle'}`}>
-              {budget.isLiveEnabled ? 'LIVE CONNECTED' : 'MOCK MODE (Default)'}
+              {budget.isLiveEnabled ? 'LIVE MODE ENABLED · NOT CONNECTIVITY CHECKED' : 'LOCAL SIMULATION'}
             </span>
           </div>
           <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
@@ -66,7 +67,7 @@ export default function ProviderUsage({ budgetSummary, systemHealth, onRefresh }
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
             <span className={`badge ${budget.isLiveEnabled ? 'badge-allow' : 'badge-subtle'}`}>
-              {budget.isLiveEnabled ? 'LIVE CONNECTED' : 'MOCK MODE (Default)'}
+              {budget.isLiveEnabled ? 'LIVE MODE ENABLED · NOT CONNECTIVITY CHECKED' : 'LOCAL SIMULATION'}
             </span>
           </div>
           <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
@@ -85,7 +86,7 @@ export default function ProviderUsage({ budgetSummary, systemHealth, onRefresh }
             </span>
           </div>
           <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-            30B parameter reasoning model with deterministic local schema extraction.
+              Deterministic local action extraction is active. External model reasoning is not required for security decisions.
           </p>
         </div>
       </div>
@@ -152,11 +153,11 @@ export default function ProviderUsage({ budgetSummary, systemHealth, onRefresh }
       {/* Explicit User-Initiated Voice Test */}
       <div className="card">
         <div className="card-title">
-          <span>Explicit Voice Synthesis Test (User Initiated)</span>
-          <span className="badge badge-subtle">Zero Background Credit Spending</span>
+          <span>Optional speech adapter test</span>
+          <span className="badge badge-subtle">Runs only when you press the button</span>
         </div>
         <p style={{ fontSize: '0.84rem', color: '#94a3b8', marginBottom: '14px' }}>
-          Test speech generation with the configured adapter. Telemetry and any reported credits are recorded in real-time.
+          Test speech generation with the configured adapter. In local simulation mode, the generated WAV is silent. A live request is sent only when live mode is enabled in server configuration.
         </p>
 
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -164,6 +165,7 @@ export default function ProviderUsage({ budgetSummary, systemHealth, onRefresh }
             type="text"
             className="input"
             value={testSpeechText}
+            maxLength={1000}
             onChange={(e) => setTestSpeechText(e.target.value)}
             placeholder="Text to synthesize..."
           />
@@ -179,12 +181,15 @@ export default function ProviderUsage({ budgetSummary, systemHealth, onRefresh }
 
         {testResult && (
           <div style={{ marginTop: '16px', padding: '12px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', fontSize: '0.84rem' }}>
-            <div style={{ fontWeight: 600, color: 'var(--color-allow)', marginBottom: '4px' }}>
-              Voice Generation Result:
-            </div>
-            <pre className="code-block">
-              {JSON.stringify(testResult.result || testResult, null, 2)}
-            </pre>
+            {testResult.success ? (
+              <>
+                <div style={{ fontWeight: 600, color: 'var(--color-allow)', marginBottom: '8px' }}>
+                  Speech request completed · {testResult.result?.isMock ? 'simulated' : 'live'} · {testResult.result?.model}
+                </div>
+                {testResult.result?.audioBase64 && <audio controls preload="none" src={`data:${testResult.result.mimeType || 'audio/wav'};base64,${testResult.result.audioBase64}`} />}
+                <div style={{ marginTop: '6px', color: '#94a3b8' }}>{testResult.result?.isMock ? 'The local adapter returns a valid silent WAV sample.' : 'Live provider audio returned.'}</div>
+              </>
+            ) : <div role="alert" style={{ color: 'var(--color-deny)' }}>{testResult.error || 'Speech request failed.'}</div>}
           </div>
         )}
       </div>

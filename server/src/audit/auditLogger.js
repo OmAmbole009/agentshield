@@ -7,6 +7,7 @@ const AUDIT_EVENT_TYPES = {
   POLICY_EVALUATED: 'POLICY_EVALUATED',
   VERIFICATION_REQUESTED: 'VERIFICATION_REQUESTED',
   VERIFICATION_ATTEMPTED: 'VERIFICATION_ATTEMPTED',
+  VERIFICATION_REJECTED: 'VERIFICATION_REJECTED',
   VERIFICATION_FAILED: 'VERIFICATION_FAILED',
   ACTION_EXECUTED: 'ACTION_EXECUTED',
   ACTION_DENIED: 'ACTION_DENIED',
@@ -103,9 +104,14 @@ class AuditLogger {
   /**
    * Reads recent audit logs with pagination and filtering.
    */
-  getEvents({ limit = 50, offset = 0, eventType = null, decision = null, actionType = null }) {
+  getEvents({ limit = 50, offset = 0, eventType = null, decision = null, actionType = null, userId = null }) {
     let query = 'SELECT * FROM audit_log WHERE 1=1';
     const params = [];
+
+    if (userId) {
+      query += ' AND user_id = ?';
+      params.push(userId);
+    }
 
     if (eventType) {
       query += ' AND event_type = ?';

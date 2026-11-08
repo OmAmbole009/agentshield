@@ -48,9 +48,39 @@ function createPolicyRouter({ db }) {
         });
       }
 
+      if (enabled !== undefined && typeof enabled !== 'boolean') {
+        return res.status(400).json({ success: false, error: 'enabled must be true or false.', errorCode: 'INVALID_POLICY_UPDATE' });
+      }
+      if (rules !== undefined && (!rules || typeof rules !== 'object' || Array.isArray(rules))) {
+        return res.status(400).json({ success: false, error: 'rules must be a JSON object.', errorCode: 'INVALID_POLICY_UPDATE' });
+      }
+      const existingRules = JSON.parse(existing.rules_json);
+      if (rules && Object.keys(rules).some(key => !Object.hasOwn(existingRules, key))) {
+        return res.status(400).json({ success: false, error: 'rules contains an unsupported setting.', errorCode: 'INVALID_POLICY_UPDATE' });
+      }
+      if (rules && Object.entries(rules).some(([key, value]) => Array.isArray(existingRules[key]) ? !Array.isArray(value) : typeof value !== typeof existingRules[key])) {
+        return res.status(400).json({ success: false, error: 'A rule value has the wrong type.', errorCode: 'INVALID_POLICY_UPDATE' });
+      }
+      const mergedRules = { ...existingRules, ...(rules || {}) };
+      const positiveLimits = existing.action_type === 'TRANSFER_FUNDS'
+        ? ['maxSingleAmount', 'stepUpThreshold']
+        : existing.action_type === 'REQUEST_REFUND'
+          ? ['maxAutoRefundAmount']
+          : existing.action_type === 'ISSUE_REFUND'
+            ? ['maxSingleAmount', 'stepUpThreshold']
+            : [];
+      for (const key of positiveLimits) {
+        if (!Number.isFinite(mergedRules[key]) || mergedRules[key] <= 0) {
+          return res.status(400).json({ success: false, error: `${key} must be a positive number.`, errorCode: 'INVALID_POLICY_UPDATE' });
+        }
+      }
+      if (mergedRules.maxSingleAmount !== undefined && mergedRules.stepUpThreshold !== undefined && mergedRules.maxSingleAmount < mergedRules.stepUpThreshold) {
+        return res.status(400).json({ success: false, error: 'The maximum amount must be at least the approval threshold.', errorCode: 'INVALID_POLICY_UPDATE' });
+      }
+
       const newVersion = existing.version + 1;
       const newEnabled = enabled !== undefined ? (enabled ? 1 : 0) : existing.enabled;
-      const newRulesJson = rules ? JSON.stringify(rules) : existing.rules_json;
+      const newRulesJson = JSON.stringify(mergedRules);
       const now = new Date().toISOString();
 
       db.prepare(`

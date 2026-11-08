@@ -55,10 +55,11 @@ function createApp(customDb = null) {
   });
 
   // Global middlewares
+  const allowedOrigins = config.corsOrigin.split(',').map(origin => origin.trim()).filter(Boolean);
   app.use(cors({
-    origin: '*',
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Id', 'X-Tenant-Id', 'X-User-Role', 'X-Agent-Id']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Id', 'X-Agent-Id']
   }));
 
   app.use(express.json({ limit: '10mb' }));

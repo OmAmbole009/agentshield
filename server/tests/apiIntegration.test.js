@@ -117,6 +117,17 @@ describe('AgentShield Express HTTP API Integration Tests', () => {
     assert.equal(res.body.executionResult.balance, 12450.00);
   });
 
+  it('POST /api/gateway/process safely reads transaction history for the account owner', async () => {
+    const res = await makeRequest(app, {
+      method: 'POST', path: '/api/gateway/process', headers: SARAH_HEADERS,
+      body: { text: 'Check my account transaction history' }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.proposal.actionType, 'READ_TRANSACTIONS');
+    assert.equal(res.body.decision, 'ALLOW');
+    assert.ok(Array.isArray(res.body.executionResult.transactions));
+  });
+
   it('POST /api/gateway/process returns VERIFY for transfer over $1,000 threshold', async () => {
     const res = await makeRequest(app, {
       method: 'POST',
@@ -168,6 +179,118 @@ describe('AgentShield Express HTTP API Integration Tests', () => {
     assert.equal(verifyRes.body.decision, 'ALLOW');
     assert.equal(verifyRes.body.executionResult.transaction.status, 'COMPLETED');
     assert.equal(verifyRes.body.executionResult.transaction.remainingBalance, 10950.00);
+  });
+
+  it('POST /api/gateway/reject invalidates a pending challenge without executing it', async () => {
+    const pending = await makeRequest(app, {
+      method: 'POST', path: '/api/gateway/process', headers: SARAH_HEADERS,
+      body: { text: 'Transfer $1,500 to recp_landlord_prop' }
+    });
+    const { challengeId } = pending.body.challenge;
+
+    const rejected = await makeRequest(app, {
+      method: 'POST', path: '/api/gateway/reject', headers: SARAH_HEADERS,
+      body: { challengeId }
+    });
+    assert.equal(rejected.status, 200);
+    assert.equal(rejected.body.status, 'REJECTED');
+    assert.equal(db.prepare('SELECT status FROM verification_challenges WHERE id = ?').get(challengeId).status, 'INVALIDATED');
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM transactions WHERE approval_id = ?').get(challengeId).count, 0);
+
+    const replay = await makeRequest(app, {
+      method: 'POST', path: '/api/gateway/verify', headers: SARAH_HEADERS,
+      body: {
+        challengeId, code: pending.body.challenge.code, actionType: 'TRANSFER_FUNDS',
+        payload: { fromAccountId: 'acc_sarah_checking', toRecipientId: 'recp_landlord_prop', amount: 1500 }
+      }
+    });
+    assert.equal(replay.status, 403);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM transactions WHERE approval_id = ?').get(challengeId).count, 0);
+  });
+
+  it('does not trust caller-supplied demo role or tenant headers', async () => {
+    const policy = await makeRequest(app, {
+      method: 'PUT', path: '/api/policies/policy_transfer_tiered',
+      headers: { ...SARAH_HEADERS, 'X-User-Role': 'admin' }, body: { enabled: false }
+    });
+    assert.equal(policy.status, 403);
+
+    const account = await makeRequest(app, {
+      method: 'POST', path: '/api/gateway/process',
+      headers: { ...SARAH_HEADERS, 'X-Tenant-Id': 'tenant_external' },
+      body: { actionType: 'READ_BALANCE', payload: { accountId: 'acc_michael_savings' } }
+    });
+    assert.equal(account.body.decision, 'DENY');
+  });
+
+  it('applies policy edits to gateway decisions and rejects unsafe rule changes', async () => {
+    const adminHeaders = { 'X-User-Id': 'usr_admin', 'X-User-Role': 'customer' };
+    const invalid = await makeRequest(app, {
+      method: 'PUT', path: '/api/policies/policy_transfer_tiered', headers: adminHeaders,
+      body: { rules: { stepUpThreshold: 0 } }
+    });
+    assert.equal(invalid.status, 400);
+
+    const update = await makeRequest(app, {
+      method: 'PUT', path: '/api/policies/policy_transfer_tiered', headers: adminHeaders,
+      body: { rules: { stepUpThreshold: 2000 } }
+    });
+    assert.equal(update.status, 200);
+    const proposal = await makeRequest(app, {
+      method: 'POST', path: '/api/gateway/process', headers: SARAH_HEADERS,
+      body: { text: 'Transfer $1,500 to recp_landlord_prop' }
+    });
+    assert.equal(proposal.body.decision, 'ALLOW');
+
+    const disable = await makeRequest(app, {
+      method: 'PUT', path: '/api/policies/policy_transfer_tiered', headers: adminHeaders,
+      body: { enabled: false }
+    });
+    assert.equal(disable.status, 200);
+    const blocked = await makeRequest(app, {
+      method: 'POST', path: '/api/gateway/process', headers: SARAH_HEADERS,
+      body: { text: 'Transfer $250 to recp_electric_co' }
+    });
+    assert.equal(blocked.body.decision, 'DENY');
+    assert.equal(blocked.body.policyDecision.reasonCode, 'POLICY_DISABLED');
+  });
+
+  it('scopes audit event reads to the selected non-admin demo identity', async () => {
+    await makeRequest(app, {
+      method: 'POST', path: '/api/gateway/process', headers: SARAH_HEADERS,
+      body: { text: 'What is my current checking account balance?' }
+    });
+    const otherUser = await makeRequest(app, {
+      method: 'GET', path: '/api/audit?limit=100',
+      headers: { 'X-User-Id': 'usr_alex_03', 'X-Tenant-Id': 'tenant_external', 'X-User-Role': 'customer' }
+    });
+    assert.equal(otherUser.status, 200);
+    assert.equal(otherUser.body.events.some(event => event.user_id === 'usr_sarah_01'), false);
+  });
+
+  it('keeps customer support lists scoped even when all=true is requested', async () => {
+    const alex = await makeRequest(app, {
+      method: 'GET', path: '/api/support/customers?all=true',
+      headers: { 'X-User-Id': 'usr_alex_03', 'X-User-Role': 'customer' }
+    });
+    assert.equal(alex.status, 200);
+    assert.ok(alex.body.customers.length > 0);
+    assert.equal(alex.body.customers.every(customer => customer.user_id === 'usr_alex_03'), true);
+  });
+
+  it('returns playable speech adapter output and validates speech test input', async () => {
+    const speech = await makeRequest(app, {
+      method: 'POST', path: '/api/provider/test-speech', body: { text: 'A local demo message.' }
+    });
+    assert.equal(speech.status, 200);
+    assert.equal(speech.body.success, true);
+    assert.equal(speech.body.result.isMock, true);
+    assert.ok(speech.body.result.audioBase64);
+
+    const invalid = await makeRequest(app, {
+      method: 'POST', path: '/api/provider/test-speech', body: { text: 'x'.repeat(1001) }
+    });
+    assert.equal(invalid.status, 400);
   });
 
   it('GET /api/audit/verify-chain confirms cryptographic integrity', async () => {

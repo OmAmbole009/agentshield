@@ -32,8 +32,8 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
 
   const presetScenarios = [
     {
-      title: 'Authorized Balance Query',
-      text: 'What is my current checking account balance?',
+      title: 'View transaction history · ALLOW',
+      text: 'Check my account transaction history',
       category: 'ALLOW'
     },
     {
@@ -42,12 +42,12 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
       category: 'ALLOW'
     },
     {
-      title: 'Step-Up Required ($1,500)',
+      title: 'Ask for approval · $1,500',
       text: 'Transfer $1,500 to Northgate Property Management for rent',
       category: 'VERIFY'
     },
     {
-      title: 'Excessive Transfer ($15,000)',
+      title: 'Block a transfer · $15,000',
       text: 'Transfer $15,000 to recp_landlord_prop',
       category: 'DENY'
     },
@@ -177,6 +177,32 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
     }
   };
 
+  const handleRejectApproval = async () => {
+    if (!activeChallenge) return;
+    setVerifyLoading(true);
+    setVerifyResult(null);
+    try {
+      const res = await fetch('/api/gateway/reject', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': currentUser.id,
+          'X-Agent-Id': 'voice-assistant-agent'
+        },
+        body: JSON.stringify({ challengeId: activeChallenge.challengeId })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not reject this request.');
+      setVerifyResult({ success: false, rejected: true, error: data.message });
+      setResponse(prev => ({ ...prev, decision: 'DENY', responseText: data.message, executionResult: null, requiresApproval: false, approvalStatus: 'REJECTED' }));
+      onSecurityEvent?.();
+    } catch (err) {
+      setVerifyResult({ success: false, error: err.message });
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
   const playSynthesizedAudio = (base64Audio) => {
     if (!base64Audio) return;
     try {
@@ -191,8 +217,14 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Preset Quick Scenarios */}
       <div className="card" style={{ padding: '16px 20px' }}>
-        <div style={{ fontSize: '0.86rem', fontWeight: 600, color: '#94a3b8', marginBottom: '12px' }}>
-          Quick Scenario Presets (Click to Execute):
+        <div className="playground-intro">
+          <div><span className="eyebrow">Request playground</span><h2>Try an action and watch the security decision.</h2>
+            <p>The agent proposes a tool call. AgentShield checks it first. Safe reads run, sensitive actions wait for your approval, and prohibited actions are blocked.</p>
+          </div>
+          <span className="badge badge-subtle">Local sandbox · no real money moves</span>
+        </div>
+        <div style={{ fontSize: '0.82rem', color: '#94a3b8', margin: '16px 0 10px', fontWeight: 600 }}>
+          Demo examples · select one to send:
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           {presetScenarios.map((sc, idx) => {
@@ -221,7 +253,7 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
       {/* Request Input Card */}
       <div className="card">
         <div className="card-title">
-          <span>AgentShield Voice & Text Security Gateway</span>
+          <span>Or enter your own request</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '0.78rem' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: '#94a3b8' }}>
               <input
@@ -229,7 +261,7 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
                 checked={enableTts}
                 onChange={(e) => setEnableTts(e.target.checked)}
               />
-              <span>Synthesize Spoken Response (Gnani Timbre)</span>
+              <span>Request spoken response (local adapter by default)</span>
             </label>
           </div>
         </div>
@@ -238,7 +270,7 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
           <input
             type="text"
             className="input"
-            placeholder="Type an instruction (e.g. 'Transfer $1,200 to Northgate Property Management for rent' or 'What is my balance?')"
+            placeholder="Try: Check my account transaction history"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => {
@@ -246,10 +278,10 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
             }}
           />
 
-          {/* Voice input button (simulated Gnani Prisma v2.5 STT pipeline) */}
+          {/* This button submits a mock transcript; it does not record from a microphone. */}
           <button
             className={`btn ${isVoiceActive ? 'btn-danger' : 'btn-secondary'}`}
-            title="Simulate Gnani Prisma v2.5 Voice Input"
+            title="Submit a mock voice transcript. No microphone recording is used."
             onClick={() => {
               const phrase = inputText.trim() || 'Transfer $1,200 to Northgate Property Management for rent';
               setInputText(phrase);
@@ -258,7 +290,7 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
             }}
           >
             <Mic size={16} />
-            <span>Voice</span>
+            <span>Mock voice</span>
           </button>
 
           <button
@@ -281,11 +313,22 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
 
       {/* Results View: Proposal Inspector & Policy Decision */}
       {response && (
+        <section className={`decision-summary decision-${response.decision?.toLowerCase()}`} aria-live="polite">
+          <div className="decision-summary-heading">
+            <div><span className="eyebrow">AgentShield decision</span><h2>{response.decision === 'ALLOW' ? 'Allowed and executed' : response.decision === 'VERIFY' ? 'Paused for your approval' : 'Blocked before execution'}</h2></div>
+            <span className={`badge ${response.decision === 'ALLOW' ? 'badge-allow' : response.decision === 'VERIFY' ? 'badge-verify' : 'badge-deny'}`}>{response.decision}</span>
+          </div>
+          <p>{response.decision === 'VERIFY' ? 'The requested tool has not run. Approve it to continue, or reject it to cancel.' : response.decision === 'DENY' ? 'The requested tool did not run. AgentShield blocked the request under its security rules.' : 'AgentShield checked the request, authorized it, and returned the sandbox tool result.'}</p>
+          <div className="decision-facts"><span><strong>Action</strong>{response.proposal?.actionType || 'Unknown'}</span><span><strong>Risk</strong>{response.policyDecision?.riskLevel || 'Not classified'}</span><span><strong>Policy reason</strong>{response.policyDecision?.reasonCode || response.decision}</span></div>
+        </section>
+      )}
+
+      {response && (
         <div className="grid-cols-2">
           {/* Action Proposal & Schema Validation Card */}
           <div className="card">
             <div className="card-title">
-              <span>Proposed Action (Untrusted Agent)</span>
+              <span>1. Agent proposal</span>
               <span className="badge badge-subtle">{response.proposal?.actionType || 'UNKNOWN'}</span>
             </div>
 
@@ -328,7 +371,7 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
           {/* Trusted Security Policy Decision Card */}
           <div className="card">
             <div className="card-title">
-              <span>Security Engine Decision</span>
+              <span>2. Rule check and result</span>
               {response.decision === 'ALLOW' && <span className="badge badge-allow">ALLOW</span>}
               {response.decision === 'VERIFY' && <span className="badge badge-verify">VERIFY REQUIRED</span>}
               {response.decision === 'DENY' && <span className="badge badge-deny">DENY</span>}
@@ -406,16 +449,16 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
           <div className="modal-card">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
               <Lock size={22} color="var(--color-verify)" />
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Step-Up Verification Challenge</h2>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Your approval is needed</h2>
             </div>
 
             <p style={{ fontSize: '0.86rem', color: '#94a3b8', marginBottom: '16px' }}>
-              Action: <strong>{activeChallenge.actionType}</strong>. To authorize execution, enter your single-use 6-digit confirmation code.
+              AgentShield paused this request before execution. Approve it to run the simulated action, or reject it to cancel.
             </p>
 
             <div style={{ padding: '12px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', marginBottom: '16px', fontSize: '0.8rem', color: '#94a3b8' }}>
-              <div>Demo Challenge Code: <strong style={{ color: '#fff', fontSize: '1rem', letterSpacing: '0.15em' }}>{activeChallenge.code}</strong></div>
-              <div style={{ fontSize: '0.74rem', marginTop: '4px' }}>Cryptographically bound to parameters: ${activeChallenge.proposal?.payload?.amount} to {activeChallenge.proposal?.payload?.toRecipientId}</div>
+              <div>Demo approval code: <strong style={{ color: '#fff', fontSize: '1rem', letterSpacing: '0.15em' }}>{activeChallenge.code}</strong></div>
+              <div style={{ fontSize: '0.74rem', marginTop: '4px' }}>Request: ${activeChallenge.proposal?.payload?.amount} to {activeChallenge.proposal?.payload?.toRecipientId}. The approved parameters cannot be changed.</div>
             </div>
 
             <div style={{ marginBottom: '20px' }}>
@@ -438,7 +481,7 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
                   </div>
                 ) : (
                   <div>
-                    <div style={{ fontWeight: 600 }}>Verification Rejected: {verifyResult.errorCode || 'FAILED'}</div>
+                    <div style={{ fontWeight: 600 }}>{verifyResult.rejected ? 'Request Rejected' : `Verification Rejected: ${verifyResult.errorCode || 'FAILED'}`}</div>
                     <div style={{ fontSize: '0.78rem', marginTop: '4px' }}>{verifyResult.error}</div>
                   </div>
                 )}
@@ -450,9 +493,18 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
                 <button
                   className="btn btn-secondary"
                   style={{ flex: 1 }}
+                  disabled={verifyLoading}
                   onClick={() => setShowVerifyModal(false)}
                 >
-                  Close
+                  Leave pending
+                </button>
+                <button
+                  className="btn btn-danger"
+                  style={{ flex: 1 }}
+                  disabled={verifyLoading}
+                  onClick={handleRejectApproval}
+                >
+                  Reject request
                 </button>
                 <button
                   className="btn btn-primary"
@@ -464,15 +516,14 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
                 </button>
               </div>
 
-              {/* Anti-Tampering Test Button */}
-              <button
-                className="btn btn-danger btn-sm"
-                title="Test parameter tampering by secretly raising amount to $9,999 before sending"
-                onClick={() => handleVerifySubmit(9999.00)}
-              >
-                <ShieldAlert size={14} />
-                <span>Simulate Parameter Tampering Attack (Raise to $9,999)</span>
-              </button>
+              <details className="security-extra-test">
+                <summary>Optional security test</summary>
+                <p>This changes the approved amount and should be rejected. It consumes this challenge, so run it only when demonstrating tamper protection.</p>
+                <button className="btn btn-danger btn-sm" disabled={verifyLoading} onClick={() => handleVerifySubmit(9999.00)}>
+                  <ShieldAlert size={14} />
+                  <span>Test parameter tampering</span>
+                </button>
+              </details>
             </div>
           </div>
         </div>

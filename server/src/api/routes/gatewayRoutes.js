@@ -77,6 +77,19 @@ function createGatewayRouter({ securityGateway }) {
     }
   });
 
+  router.post('/reject', (req, res, next) => {
+    try {
+      const { challengeId } = req.body;
+      if (typeof challengeId !== 'string' || !challengeId) {
+        return res.status(400).json({ success: false, error: 'Missing challengeId.', errorCode: 'MISSING_CHALLENGE_ID' });
+      }
+      const result = securityGateway.rejectPendingApproval({ challengeId, user: req.user, agent: req.agent });
+      return res.status(result.success ? 200 : 404).json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   return router;
 }
 

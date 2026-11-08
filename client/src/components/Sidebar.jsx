@@ -13,13 +13,13 @@ import {
 
 export default function Sidebar({ activeTab, setActiveTab, currentUser }) {
   const navItems = [
-    { id: 'overview', label: 'Overview', icon: Activity },
-    { id: 'playground', label: 'Agent Playground', icon: Terminal },
-    { id: 'support', label: 'Support Agent', icon: Headphones },
-    { id: 'policies', label: 'Policy Center', icon: Sliders },
-    { id: 'audit', label: 'Audit Trail', icon: FileSearch },
-    { id: 'provider', label: 'Provider & Budget', icon: Coins },
-    { id: 'testlab', label: 'Security Test Lab', icon: FlaskConical }
+    { id: 'overview', label: 'Demo guide', icon: Activity },
+    { id: 'playground', label: 'Try an action', icon: Terminal },
+    { id: 'testlab', label: 'Security checks', icon: FlaskConical },
+    { id: 'audit', label: 'Audit history', icon: FileSearch },
+    { id: 'policies', label: 'Policies', icon: Sliders },
+    { id: 'support', label: 'Support agent', icon: Headphones },
+    { id: 'provider', label: 'AI provider', icon: Coins }
   ];
 
   return (
@@ -30,7 +30,7 @@ export default function Sidebar({ activeTab, setActiveTab, currentUser }) {
         </div>
         <div>
           <div className="brand-title">AgentShield</div>
-          <div className="brand-subtitle">AI Runtime Security</div>
+          <div className="brand-subtitle">Protected agent actions</div>
         </div>
       </div>
 
@@ -52,6 +52,7 @@ export default function Sidebar({ activeTab, setActiveTab, currentUser }) {
       </nav>
 
       <div className="sidebar-footer">
+        <div className="demo-mode-caption">LOCAL DEMO · SIMULATED DATA</div>
         <div className="user-badge">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <UserCheck size={16} color="#00c2a8" />

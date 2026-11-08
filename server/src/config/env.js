@@ -9,7 +9,8 @@ const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   databasePath: process.env.DATABASE_PATH || './data/agentshield.sqlite',
-  jwtSecret: process.env.JWT_SECRET || 'demo-secret-agentshield-security-token-do-not-use-in-prod',
+  // Reserved for a future authentication integration; no JWT implementation is present.
+  jwtSecret: process.env.JWT_SECRET || '',
   verificationExpirySeconds: parseInt(process.env.VERIFICATION_CODE_EXPIRY_SECONDS || '300', 10),
   idempotencyWindowSeconds: parseInt(process.env.IDEMPOTENCY_WINDOW_SECONDS || '86400', 10),
   aiProvider: process.env.AI_MODEL_PROVIDER || 'deterministic',

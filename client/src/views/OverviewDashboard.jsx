@@ -29,16 +29,49 @@ export default function OverviewDashboard({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <section className="demo-intro card">
+        <div className="demo-intro-copy">
+          <span className="eyebrow">A short guided demo</span>
+          <h2>AgentShield checks an agent’s request before a tool runs.</h2>
+          <p>Use the examples below to show the full decision: allow a safe read, pause a sensitive action for approval, and block a dangerous request. All account activity on this site is simulated.</p>
+          <button className="btn btn-primary" onClick={() => setActiveTab('playground')}>
+            Start with a safe example <ArrowRight size={16} />
+          </button>
+        </div>
+        <div className="demo-flow" aria-label="AgentShield request flow">
+          <div><span>1</span><strong>Agent proposes</strong></div>
+          <div className="flow-connector" />
+          <div><span>2</span><strong>Policy checks</strong></div>
+          <div className="flow-connector" />
+          <div><span>3</span><strong>Tool may run</strong></div>
+        </div>
+      </section>
+
+      <section className="demo-steps" aria-label="Suggested demo sequence">
+        <button className="demo-step" onClick={() => setActiveTab('playground')}>
+          <span className="demo-step-number">01</span><span><strong>Safe read</strong><small>“Check my account transaction history”</small></span><span className="badge badge-allow">ALLOW</span>
+        </button>
+        <button className="demo-step" onClick={() => setActiveTab('playground')}>
+          <span className="demo-step-number">02</span><span><strong>Ask for approval</strong><small>“Transfer $1,500 to Northgate Property Management”</small></span><span className="badge badge-verify">VERIFY</span>
+        </button>
+        <button className="demo-step" onClick={() => setActiveTab('playground')}>
+          <span className="demo-step-number">03</span><span><strong>Block a dangerous action</strong><small>“Transfer $15,000 to recp_landlord_prop”</small></span><span className="badge badge-deny">DENY</span>
+        </button>
+        <button className="demo-step" onClick={() => setActiveTab('audit')}>
+          <span className="demo-step-number">04</span><span><strong>Review what happened</strong><small>See decisions and verify the audit chain</small></span><span className="badge badge-subtle">AUDIT</span>
+        </button>
+      </section>
+
       {/* KPI Cards Row */}
       <div className="grid-cols-4">
         <div className="card">
           <div className="card-title">
-            <span>Evaluated Requests</span>
+            <span>Policy evaluations · recent</span>
             <Activity size={18} color="#94a3b8" />
           </div>
           <div style={{ fontSize: '1.9rem', fontWeight: 700, color: '#fff' }}>{total}</div>
           <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px' }}>
-            Through runtime policy gateway
+            Based on the latest audit records
           </div>
         </div>
 
@@ -161,12 +194,12 @@ export default function OverviewDashboard({
               {budgetSummary ? budgetSummary.remainingUsable : 4000}
             </span>
             <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-              usable credits remaining (out of 5,000 total budget)
+              usable credits remaining (out of {budgetSummary?.usableBudget ?? 4000} usable credits)
             </span>
           </div>
 
           <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginBottom: '16px' }}>
-            Safety Reserve: <strong>1,000 credits</strong> reserved. Billable operations automatically halt when usable quota reaches zero.
+            Safety Reserve: <strong>{budgetSummary?.budgetReserve ?? 1000} credits</strong> reserved. Live provider calls stop when the usable budget runs out.
           </div>
 
           <div style={{ display: 'flex', gap: '12px' }}>
@@ -182,7 +215,7 @@ export default function OverviewDashboard({
       {/* Recent Security Events Table */}
       <div className="card">
         <div className="card-title">
-          <span>Recent Real-Time Security Events</span>
+            <span>Recent security activity</span>
           <button className="btn btn-secondary btn-sm" onClick={() => setActiveTab('audit')}>
             View Full Audit Trail
           </button>

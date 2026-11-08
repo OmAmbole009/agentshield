@@ -5,6 +5,11 @@ const ReadBalanceSchema = z.object({
   accountId: z.string().min(3).max(64).regex(/^acc_[a-zA-Z0-9_]+$/, 'Invalid account ID format')
 }).strict();
 
+const ReadTransactionsSchema = z.object({
+  accountId: z.string().min(3).max(64).regex(/^acc_[a-zA-Z0-9_]+$/, 'Invalid account ID format'),
+  limit: z.number().int().min(1).max(50).optional().default(20)
+}).strict();
+
 // Schema for TRANSFER_FUNDS
 const TransferFundsSchema = z.object({
   fromAccountId: z.string().min(3).max(64).regex(/^acc_[a-zA-Z0-9_]+$/, 'Invalid account ID format'),
@@ -67,6 +72,7 @@ const UpdateSubscriptionSchema = z.object({
 
 module.exports = {
   ReadBalanceSchema,
+  ReadTransactionsSchema,
   TransferFundsSchema,
   RequestRefundSchema,
   UpdatePreferenceSchema,

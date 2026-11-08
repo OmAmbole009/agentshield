@@ -23,6 +23,17 @@ class DeterministicIntentExtractor {
     const lower = clean.toLowerCase();
     const defaultAccountId = context.defaultAccountId || 'acc_sarah_checking';
 
+    if (lower.includes('transaction history') || lower.includes('transactions')) {
+      const accMatch = clean.match(/acc_[a-zA-Z0-9_]+/);
+      return {
+        actionType: ACTION_TYPES.READ_TRANSACTIONS,
+        payload: { accountId: accMatch ? accMatch[0] : defaultAccountId, limit: 20 },
+        confidence: 0.96,
+        rawText: clean,
+        isInjectionDetected: false
+      };
+    }
+
     // 1. Detect Prompt Injection / Malicious Exfiltration Attempts
     const injectionPatterns = [
       /ignore (all )?previous instructions/i,

@@ -215,6 +215,17 @@ class BankingService {
       SELECT * FROM transactions WHERE user_id = ? ORDER BY rowid DESC LIMIT ?
     `).all(userId, limit);
   }
+
+  getAccountTransactionHistory({ accountId, limit = 20, user }) {
+    const account = this.db.prepare('SELECT id, user_id, account_number FROM accounts WHERE id = ?').get(accountId);
+    if (!account || account.user_id !== user.id) {
+      throw new Error('Unauthorized transaction history access.');
+    }
+    const transactions = this.db.prepare(`
+      SELECT * FROM transactions WHERE account_id = ? AND user_id = ? ORDER BY rowid DESC LIMIT ?
+    `).all(accountId, user.id, limit);
+    return { accountId: account.id, accountNumber: account.account_number, transactions };
+  }
 }
 
 module.exports = {

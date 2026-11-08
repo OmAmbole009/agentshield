@@ -39,7 +39,7 @@ class PolicyEngine {
    */
   getActivePolicies() {
     try {
-      const rows = this.db.prepare('SELECT * FROM policies WHERE enabled = 1').all();
+      const rows = this.db.prepare('SELECT * FROM policies').all();
       const map = {};
       for (const row of rows) {
         map[row.action_type] = {
@@ -83,6 +83,18 @@ class PolicyEngine {
     const cleanPayload = validation.data;
     const policies = this.getActivePolicies();
     const policy = policies[actionType];
+
+    if (policy && policy.enabled === 0) {
+      return {
+        decision: DECISIONS.DENY,
+        reasonCode: REASON_CODES.POLICY_DISABLED,
+        policyId: policy.id,
+        riskLevel: RISK_LEVELS.HIGH,
+        requiresApproval: false,
+        message: `Action blocked because policy "${policy.name}" is disabled.`,
+        details: { actionType }
+      };
+    }
 
     // 2. High-Risk Action Guard: Exfiltration of customer data is strictly forbidden for conversational AI agents
     if (actionType === ACTION_TYPES.EXPORT_CUSTOMER_DATA) {
@@ -148,6 +160,41 @@ class PolicyEngine {
           riskLevel: RISK_LEVELS.LOW,
           requiresApproval: false,
           message: 'Account balance query authorized for account owner.',
+          details: { accountId: cleanPayload.accountId }
+        };
+      }
+
+      case ACTION_TYPES.READ_TRANSACTIONS: {
+        const account = this.getAccount(cleanPayload.accountId);
+        if (!account) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.ACCOUNT_NOT_FOUND,
+            policyId: policy?.id || 'policy_transaction_read',
+            riskLevel: RISK_LEVELS.LOW,
+            requiresApproval: false,
+            message: `Account "${cleanPayload.accountId}" not found.`,
+            details: null
+          };
+        }
+        if (account.user_id !== user.id || account.tenant_id !== user.tenantId) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.CROSS_TENANT_ACCESS_DENIED,
+            policyId: policy?.id || 'policy_transaction_read',
+            riskLevel: RISK_LEVELS.CRITICAL,
+            requiresApproval: false,
+            message: `Transaction history access denied for account "${cleanPayload.accountId}".`,
+            details: null
+          };
+        }
+        return {
+          decision: DECISIONS.ALLOW,
+          reasonCode: REASON_CODES.ALLOWED_BY_POLICY,
+          policyId: policy?.id || 'policy_transaction_read',
+          riskLevel: RISK_LEVELS.LOW,
+          requiresApproval: false,
+          message: 'Transaction history query authorized for account owner.',
           details: { accountId: cleanPayload.accountId }
         };
       }

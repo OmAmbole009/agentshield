@@ -71,13 +71,13 @@ export default function PolicyCenter({ policies, currentUser, onRefreshPolicies 
       {/* Policy Center Header Card */}
       <div className="card">
         <div className="card-title">
-          <span>Enterprise Policy Governance Center</span>
+          <span>Rules the gateway applies before a tool runs</span>
           <span className={`badge ${isAdmin ? 'badge-allow' : 'badge-subtle'}`}>
             Role: {currentUser.role.toUpperCase()} {isAdmin ? '(Admin Privileges)' : '(Read-Only)'}
           </span>
         </div>
         <p style={{ fontSize: '0.86rem', color: '#94a3b8' }}>
-          Policies are enforced strictly by backend deterministic rules. Untrusted language models have zero capability to self-modify or bypass authorization logic.
+          Changes are saved to the local database and take effect immediately. Disabling a policy blocks that action. Ownership checks and prohibited-operation rules remain enforced independently.
         </p>
 
         {!isAdmin && (
@@ -91,7 +91,7 @@ export default function PolicyCenter({ policies, currentUser, onRefreshPolicies 
       {/* Policies Table */}
       <div className="card">
         <div className="card-title">
-          <span>Configured Action Policies ({policies.length})</span>
+            <span>Configured rules ({policies.length})</span>
         </div>
 
         <div className="table-wrap">
@@ -108,6 +108,7 @@ export default function PolicyCenter({ policies, currentUser, onRefreshPolicies 
               </tr>
             </thead>
             <tbody>
+              {policies.length === 0 && <tr><td colSpan="7" style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No policy records are available.</td></tr>}
               {policies.map(p => (
                 <tr key={p.id}>
                   <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 600 }}>
@@ -173,6 +174,9 @@ export default function PolicyCenter({ policies, currentUser, onRefreshPolicies 
               <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px' }}>
                 Rules Definition (JSON):
               </div>
+              <p style={{ margin: '-8px 0 12px', color: 'var(--text-muted)', fontSize: '0.76rem' }}>
+                Numeric transfer and refund limits are validated by the server. The approval threshold must not exceed the maximum.
+              </p>
               <textarea
                 className="input"
                 style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', height: '180px', resize: 'vertical' }}
