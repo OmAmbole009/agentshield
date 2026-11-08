@@ -92,6 +92,11 @@ function createApp(customDb = null) {
   app.use('/api/scenarios', createScenariosRouter({ securityGateway, bankingService, db }));
   app.use('/api/support', createSupportRouter({ customerSupportService, securityGateway, db, auditLogger }));
 
+  // Keep missing API paths machine-readable instead of falling through to an HTML 404.
+  app.use('/api', (req, res) => {
+    res.status(404).json({ success: false, error: `API route not found: ${req.method} ${req.originalUrl}`, errorCode: 'API_ROUTE_NOT_FOUND' });
+  });
+
   // Serve static client bundle if built
   const clientDist = path.resolve(process.cwd(), 'client/dist');
   app.use(express.static(clientDist));

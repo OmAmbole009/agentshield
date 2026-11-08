@@ -103,6 +103,12 @@ describe('AgentShield Express HTTP API Integration Tests', () => {
     assert.equal(res.body.service, 'AgentShield Security Platform');
   });
 
+  it('unknown API paths return JSON diagnostics instead of an HTML 404', async () => {
+    const res = await makeRequest(app, { method: 'POST', path: '/api/support/old-route' });
+    assert.equal(res.status, 404);
+    assert.equal(res.body.errorCode, 'API_ROUTE_NOT_FOUND');
+  });
+
   it('POST /api/gateway/process processes natural language balance inquiry (ALLOW)', async () => {
     const res = await makeRequest(app, {
       method: 'POST',

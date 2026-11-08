@@ -8,6 +8,21 @@ const examples = [
   'My device battery is swollen and heating up.'
 ];
 
+async function readApiResponse(response, fallback) {
+  const contentType = response.headers.get('content-type') || '';
+  const body = await response.text();
+  let data;
+  try { data = JSON.parse(body); }
+  catch {
+    if (contentType.includes('text/html') || body.trimStart().startsWith('<')) {
+      throw new Error(`The support API returned a webpage (HTTP ${response.status}). The backend may be stale or /api may not be proxied to it. Restart or redeploy the latest backend, then try again.`);
+    }
+    throw new Error(`The support API returned an unreadable response (HTTP ${response.status}). Restart the backend and try again.`);
+  }
+  if (!response.ok) throw new Error(data.error || fallback);
+  return data;
+}
+
 export default function SupportConversation({ currentUser, onSecurityEvent }) {
   const [conversationId, setConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -20,14 +35,13 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
 
   useEffect(() => {
     let cancelled = false;
-    setConversationId(null); setMessages([]);
+    setConversationId(null); setMessages([]); setError('');
     const key = `agentshield-support-conversation:${currentUser.id}`;
     const savedId = window.sessionStorage.getItem(key);
     if (savedId) {
       fetch(`/api/support/conversations/${encodeURIComponent(savedId)}`, { headers: { 'X-User-Id': currentUser.id } })
         .then(async response => {
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Could not restore the conversation.');
+          const data = await readApiResponse(response, 'Could not restore the conversation.');
           if (!cancelled) {
             setConversationId(savedId);
             setMessages((data.messages || []).map(item => ({ role: item.role, content: item.content, classification: item.metadata?.classification, eligibility: item.metadata?.eligibility })));
@@ -44,9 +58,7 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
       const responses = await Promise.all([
         fetch('/api/support/refund-approvals', { headers }), fetch('/api/support/tickets', { headers }), fetch('/api/support/admin/summary', { headers })
       ]);
-      const data = await Promise.all(responses.map(response => response.json()));
-      const failed = responses.findIndex(response => !response.ok);
-      if (failed >= 0) throw new Error(data[failed].error || 'Could not load the support admin queue.');
+      const data = await Promise.all(responses.map(response => readApiResponse(response, 'Could not load the support admin queue.')));
       setApprovals(data[0].requests || []); setTickets(data[1].tickets || []); setSummary(data[2].summary || null);
     } catch (err) { setError(err.message); }
   }
@@ -61,14 +73,13 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Id': currentUser.id },
         body: JSON.stringify({ conversationId, message })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Support request failed.');
+      const data = await readApiResponse(response, 'Support request failed.');
       setConversationId(data.conversationId);
       window.sessionStorage.setItem(`agentshield-support-conversation:${currentUser.id}`, data.conversationId);
       setMessages(prev => [...prev, { role: 'assistant', content: data.message, classification: data.classification, metadata: data.metadata, order: data.order, eligibility: data.eligibility }]);
       onSecurityEvent?.();
       if (currentUser.role === 'admin') loadAdminData();
-    } catch (err) { setError(err.message); }
+    } catch (err) { setMessages(prev => prev.slice(0, -1)); setDraft(message); setError(err.message); }
     finally { setBusy(false); }
   }
 
@@ -79,8 +90,7 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Id': currentUser.id },
         body: JSON.stringify({ decision, note: decision === 'APPROVE' ? 'Approved in demo review queue.' : 'Rejected in demo review queue.' })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Review failed.');
+      const data = await readApiResponse(response, 'Review failed.');
       await loadAdminData(); onSecurityEvent?.();
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
@@ -93,8 +103,7 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Id': currentUser.id },
         body: JSON.stringify({ status })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Ticket update failed.');
+      const data = await readApiResponse(response, 'Ticket update failed.');
       await loadAdminData(); onSecurityEvent?.();
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
