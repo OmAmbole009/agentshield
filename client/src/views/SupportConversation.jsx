@@ -23,6 +23,13 @@ async function readApiResponse(response, fallback) {
   return data;
 }
 
+function explainRequestError(error) {
+  if (error instanceof TypeError && /fetch/i.test(error.message)) {
+    return "Can't reach the AgentShield backend. For a local demo, run 'npm run dev' from the project folder, then reload this page. For a hosted demo, make sure the backend is deployed and /api is routed to it.";
+  }
+  return error.message || 'The support request failed. Please try again.';
+}
+
 export default function SupportConversation({ currentUser, onSecurityEvent }) {
   const [conversationId, setConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -46,7 +53,7 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
             setConversationId(savedId);
             setMessages((data.messages || []).map(item => ({ role: item.role, content: item.content, classification: item.metadata?.classification, eligibility: item.metadata?.eligibility })));
           }
-        }).catch(err => { if (!cancelled) setError(err.message); });
+        }).catch(err => { if (!cancelled) setError(explainRequestError(err)); });
     }
     return () => { cancelled = true; };
   }, [currentUser.id]);
@@ -60,7 +67,7 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
       ]);
       const data = await Promise.all(responses.map(response => readApiResponse(response, 'Could not load the support admin queue.')));
       setApprovals(data[0].requests || []); setTickets(data[1].tickets || []); setSummary(data[2].summary || null);
-    } catch (err) { setError(err.message); }
+    } catch (err) { setError(explainRequestError(err)); }
   }
 
   async function send(value = draft) {
@@ -79,7 +86,7 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
       setMessages(prev => [...prev, { role: 'assistant', content: data.message, classification: data.classification, metadata: data.metadata, order: data.order, eligibility: data.eligibility }]);
       onSecurityEvent?.();
       if (currentUser.role === 'admin') loadAdminData();
-    } catch (err) { setMessages(prev => prev.slice(0, -1)); setDraft(message); setError(err.message); }
+    } catch (err) { setMessages(prev => prev.slice(0, -1)); setDraft(message); setError(explainRequestError(err)); }
     finally { setBusy(false); }
   }
 
@@ -92,7 +99,7 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
       });
       const data = await readApiResponse(response, 'Review failed.');
       await loadAdminData(); onSecurityEvent?.();
-    } catch (err) { setError(err.message); }
+    } catch (err) { setError(explainRequestError(err)); }
     finally { setBusy(false); }
   }
 
@@ -105,7 +112,7 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
       });
       const data = await readApiResponse(response, 'Ticket update failed.');
       await loadAdminData(); onSecurityEvent?.();
-    } catch (err) { setError(err.message); }
+    } catch (err) { setError(explainRequestError(err)); }
     finally { setBusy(false); }
   }
 
