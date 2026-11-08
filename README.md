@@ -105,7 +105,17 @@ The transaction history action is read only, account scoped, and limited to the 
 - Banking, refunds, and provider mock responses are simulated. Gnani live calls require valid credentials and separate provider configuration.
 - Add real authentication and per-user audit filtering before any shared deployment; then conduct a threat model and security review.
 
+## Customer support sandbox
+
+The Support agent page includes a persistent conversation demo. Try `Where is order ord_sarah_101?`, then `My headphones are not connecting. I want a refund.` The assistant verifies ownership and recorded order facts, asks for diagnostics, records issues and support tickets, and checks the configured return policy. Eligible refund requests wait in the administrator review queue; no refund executes while pending. Switch the demo identity to **Security Admin** to approve or reject the request. Approval passes through AgentShield's policy gateway and updates only the local SQLite sandbox ledger.
+
+Seeded examples cover a recent paid headphones delivery (`ord_sarah_101`), a recent high-value camera order (`ord_sarah_104`, $800) for reviewer approval, an order outside the configured 30-day return period (`ord_sarah_102`), an already-refunded order (`ord_sarah_103`), an in-transit order (`ord_michael_201`), and disputed delivery (`ord_alex_301`). The policy values live in the `ISSUE_REFUND` policy (`returnWindowDays`, `maxSingleAmount`, `stepUpThreshold`, `humanApprovalThreshold`); seed values are demo policy, not universal requirements.
+
+This conversation is deterministic demo logic, not a live LLM or commerce integration. Payment, refund, identity, and order records are simulated; no actual payment provider is called. The local demo identity selector is not authentication.
+
 ## Documentation
+
+- [Submission checklist](SUBMISSION_CHECKLIST.md)
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [API reference](docs/API.md)

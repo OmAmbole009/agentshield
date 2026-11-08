@@ -1,5 +1,7 @@
 # AgentShield Architecture & Security Design
 
+> Scope note: this repository is a local demonstration. Authentication and external commerce/payment providers are simulated or unconfigured. The customer support workflow below is deterministic; no live language model is needed for its core decisions.
+
 AgentShield is an enterprise-grade runtime security, authorization, and control platform for autonomous AI agents.
 
 ## Core Principle
@@ -64,6 +66,35 @@ The language model operates strictly in the untrusted proposal zone. All busines
 ---
 
 ## 2. Core Architectural Subsystems
+
+## 3. Customer support workflow
+
+```mermaid
+flowchart LR
+  C[Customer message] --> S[Support route and persistent conversation]
+  S --> I[Issue/safety classification]
+  I --> O[Backend ownership and order lookup]
+  O -->|unverified or foreign order| X[Generic block; no disclosure]
+  O -->|verified| D[Support issue and ticket records]
+  D --> P[ISSUE_REFUND policy and eligibility checks]
+  P -->|ineligible or missing facts| R[Explain / ask / warranty ticket]
+  P -->|eligible| Q[Pending human approval]
+  Q -->|reject| N[Persist rejection; no refund]
+  Q -->|approve| G[Gateway rechecks action policy]
+  G --> E[Idempotent sandbox refund transaction]
+  I -->|hazard| H[Safety guidance and urgent ticket]
+  X --> A[Hash-chained audit]
+  R --> A
+  N --> A
+  E --> A
+  H --> A
+```
+
+The `support_conversations`, `support_messages`, `support_issues`, `support_tickets`, and `refund_approval_requests` tables persist the support process. Orders carry purchase, delivery, and payment fields. Seed data deliberately includes an eligible recent order, an expired order, a refunded order, an in-transit order, and an order with disputed delivery.
+
+The refund policy is the seeded `ISSUE_REFUND` row. It contains `returnWindowDays`, `maxSingleAmount`, `stepUpThreshold`, and `humanApprovalThreshold`. Verified product SKUs, categories, returnability, and warranty duration live in `support_products`. Product support issues must be recorded before the conversation can queue a refund; the legacy refund proposal endpoint is denied without one. The admin review endpoint checks the server-owned demo role, claims a pending request, revalidates paid/delivered ownership through the policy gateway, and uses an idempotency key when executing the local refund. These sample policies are not universal business or legal rules.
+
+The support classifier and troubleshooting responses are rule based, not LLM reasoning. Safety language escalates without repair instructions. The customer-facing chat cannot mark a request approved, set its owner, or supply order facts; backend identity and database records control those decisions.
 
 ### A. Typed Action Registry
 - Located in `server/src/registry/actions.js` & `server/src/registry/schemas.js`.

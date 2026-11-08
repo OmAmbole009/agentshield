@@ -129,6 +129,10 @@ function initSchema(db) {
       items_json TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
+      purchase_date TEXT,
+      delivery_date TEXT,
+      delivery_status TEXT NOT NULL DEFAULT 'DELIVERED',
+      payment_status TEXT NOT NULL DEFAULT 'PAID',
       FOREIGN KEY (customer_id) REFERENCES customers(id)
     );
 
@@ -145,6 +149,11 @@ function initSchema(db) {
       FOREIGN KEY (order_id) REFERENCES orders(id)
     );
 
+    CREATE TABLE IF NOT EXISTS support_products (
+      sku TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL,
+      returnable INTEGER NOT NULL DEFAULT 1, warranty_days INTEGER NOT NULL DEFAULT 365
+    );
+
     CREATE TABLE IF NOT EXISTS subscriptions (
       id TEXT PRIMARY KEY,
       customer_id TEXT NOT NULL,
@@ -158,6 +167,33 @@ function initSchema(db) {
       FOREIGN KEY (customer_id) REFERENCES customers(id)
     );
 
+    CREATE TABLE IF NOT EXISTS support_conversations (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, customer_id TEXT NOT NULL,
+      context_order_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS support_messages (
+      id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
+      content TEXT NOT NULL, metadata_json TEXT, created_at TEXT NOT NULL,
+      FOREIGN KEY (conversation_id) REFERENCES support_conversations(id)
+    );
+    CREATE TABLE IF NOT EXISTS support_issues (
+      id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, customer_id TEXT NOT NULL,
+      order_id TEXT, product_sku TEXT, classification TEXT NOT NULL,
+      details TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, order_id TEXT,
+      issue_id TEXT, category TEXT NOT NULL, status TEXT NOT NULL,
+      summary TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS refund_approval_requests (
+      id TEXT PRIMARY KEY, order_id TEXT NOT NULL, customer_id TEXT NOT NULL,
+      user_id TEXT NOT NULL, amount REAL NOT NULL, reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING', idempotency_key TEXT NOT NULL UNIQUE,
+      reviewer_id TEXT, review_note TEXT, refund_id TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+
     -- Indexes for high-frequency queries
     CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
     CREATE INDEX IF NOT EXISTS idx_tx_account ON transactions(account_id);
@@ -168,9 +204,23 @@ function initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_customers_user ON customers(user_id);
     CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
     CREATE INDEX IF NOT EXISTS idx_refunds_order ON order_refunds(order_id);
+    CREATE INDEX IF NOT EXISTS idx_support_products_category ON support_products(category);
     CREATE INDEX IF NOT EXISTS idx_refunds_idempotency ON order_refunds(idempotency_key);
     CREATE INDEX IF NOT EXISTS idx_subs_customer ON subscriptions(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_support_conversations_user ON support_conversations(user_id, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_support_messages_conversation ON support_messages(conversation_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_support_issues_customer ON support_issues(customer_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_refund_approvals_status ON refund_approval_requests(status, created_at);
   `);
+
+  const orderColumns = new Set(db.prepare('PRAGMA table_info(orders)').all().map(column => column.name));
+  for (const [name, declaration] of Object.entries({
+    purchase_date: 'TEXT', delivery_date: 'TEXT',
+    delivery_status: "TEXT NOT NULL DEFAULT 'DELIVERED'",
+    payment_status: "TEXT NOT NULL DEFAULT 'PAID'"
+  })) {
+    if (!orderColumns.has(name)) db.exec(`ALTER TABLE orders ADD COLUMN ${name} ${declaration}`);
+  }
 }
 
 module.exports = {

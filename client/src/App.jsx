@@ -8,6 +8,7 @@ import AuditExplorer from './views/AuditExplorer';
 import ProviderUsage from './views/ProviderUsage';
 import SecurityTestLab from './views/SecurityTestLab';
 import CustomerSupportAgent from './views/CustomerSupportAgent';
+import SupportConversation from './views/SupportConversation';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -131,11 +132,13 @@ export default function App() {
           )}
 
           {activeTab === 'support' && (
-            <CustomerSupportAgent
-              currentUser={currentUser}
-              onSecurityEvent={fetchAllData}
-              setActiveTab={setActiveTab}
-            />
+            <>
+              <SupportConversation currentUser={currentUser} onSecurityEvent={fetchAllData} />
+              <details style={{ marginTop: 18 }}>
+                <summary style={{ color: 'var(--text-muted)', cursor: 'pointer', margin: '0 0 14px' }}>Additional security action lab (optional)</summary>
+                <CustomerSupportAgent currentUser={currentUser} onSecurityEvent={fetchAllData} setActiveTab={setActiveTab} />
+              </details>
+            </>
           )}
 
           {activeTab === 'policies' && (

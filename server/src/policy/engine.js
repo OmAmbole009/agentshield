@@ -25,6 +25,7 @@ const REASON_CODES = {
   UNAUTHORIZED_DATA_EXFILTRATION_RISK: 'UNAUTHORIZED_DATA_EXFILTRATION_RISK',
   EXCEEDS_REFUNDABLE_BALANCE: 'EXCEEDS_REFUNDABLE_BALANCE',
   ORDER_INELIGIBLE_FOR_REFUND: 'ORDER_INELIGIBLE_FOR_REFUND',
+  ISSUE_VERIFICATION_REQUIRED: 'ISSUE_VERIFICATION_REQUIRED',
   IDEMPOTENCY_CONFLICT: 'IDEMPOTENCY_CONFLICT',
   POLICY_DISABLED: 'POLICY_DISABLED'
 };
@@ -64,7 +65,7 @@ class PolicyEngine {
    * @param {Object} context.agent - { id, name, permissions }
    * @returns {Object} Structured decision: { decision, reasonCode, policyId, riskLevel, requiresApproval, message, details }
    */
-  evaluate({ actionType, payload, user, agent }) {
+  evaluate({ actionType, payload, user, agent, idempotencyKey = null }) {
     // 1. Schema & Action Registry Validation
     const validation = validateActionPayload(actionType, payload);
     if (!validation.isValid) {
@@ -467,6 +468,32 @@ class PolicyEngine {
           };
         }
 
+        if (idempotencyKey) {
+          const prior = this.db.prepare('SELECT * FROM order_refunds WHERE idempotency_key = ?').get(idempotencyKey);
+          if (prior) {
+            if (prior.order_id !== order.id || Number(prior.amount) !== Number(cleanPayload.amount)) {
+              return {
+                decision: DECISIONS.DENY,
+                reasonCode: REASON_CODES.IDEMPOTENCY_CONFLICT,
+                policyId: policy?.id || 'policy_support_refund',
+                riskLevel: RISK_LEVELS.HIGH,
+                requiresApproval: false,
+                message: 'Idempotency key was already used with different refund parameters.',
+                details: { orderId: order.id }
+              };
+            }
+            return {
+              decision: DECISIONS.ALLOW,
+              reasonCode: 'IDEMPOTENT_REPLAY',
+              policyId: policy?.id || 'policy_support_refund',
+              riskLevel: RISK_LEVELS.LOW,
+              requiresApproval: false,
+              message: 'Previously completed refund recognized; no new refund will execute.',
+              details: { orderId: order.id, refundId: prior.id }
+            };
+          }
+        }
+
         // Eligibility check
         if (order.status === 'REFUNDED' || order.status === 'CANCELLED') {
           return {
@@ -477,6 +504,18 @@ class PolicyEngine {
             requiresApproval: false,
             message: `Order "${cleanPayload.orderId}" is ineligible for refund (status: ${order.status}).`,
             details: { orderStatus: order.status }
+          };
+        }
+
+        if (order.payment_status !== 'PAID' || order.delivery_status !== 'DELIVERED' || order.status !== 'DELIVERED') {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.ORDER_INELIGIBLE_FOR_REFUND,
+            policyId: policy?.id || 'policy_support_refund',
+            riskLevel: RISK_LEVELS.HIGH,
+            requiresApproval: false,
+            message: 'Refund blocked: payment and delivery must both be verified in the order record.',
+            details: { paymentStatus: order.payment_status, deliveryStatus: order.delivery_status, orderStatus: order.status }
           };
         }
 
@@ -512,6 +551,47 @@ class PolicyEngine {
             message: `Refund rejected: Amount ($${amount.toFixed(2)}) exceeds maximum allowable refund limit ($${rules.maxSingleAmount.toFixed(2)}).`,
             details: { maxLimit: rules.maxSingleAmount, requestedAmount: amount }
           };
+        }
+
+        const verifiedIssue = this.db.prepare(`SELECT id FROM support_issues WHERE order_id = ? AND customer_id = ? AND status = 'OPEN' AND classification IN ('DEFECT_REPORTED','DAMAGE_REPORTED','MISSING_ITEM','WRONG_ITEM') ORDER BY created_at DESC LIMIT 1`).get(order.id, order.customer_id);
+        if (!verifiedIssue) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.ISSUE_VERIFICATION_REQUIRED,
+            policyId: policy?.id || 'policy_support_refund',
+            riskLevel: RISK_LEVELS.MEDIUM,
+            requiresApproval: false,
+            message: 'A refund requires a recorded and classified product issue from the support workflow.',
+            details: { orderId: order.id }
+          };
+        }
+        const orderItems = JSON.parse(order.items_json || '[]');
+        if (!orderItems.length || orderItems.some(item => !this.db.prepare('SELECT 1 FROM support_products WHERE sku = ? AND returnable = 1').get(item.sku))) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.ORDER_INELIGIBLE_FOR_REFUND,
+            policyId: policy?.id || 'policy_support_refund',
+            riskLevel: RISK_LEVELS.MEDIUM,
+            requiresApproval: false,
+            message: 'Product is missing from the verified catalog or is marked non-returnable.',
+            details: { orderId: order.id }
+          };
+        }
+
+        const refundRules = policy?.rules || {};
+        if (refundRules.returnWindowDays) {
+          const ageDays = order.purchase_date ? Math.floor((Date.now() - Date.parse(order.purchase_date)) / 86400000) : Infinity;
+          if (!Number.isFinite(ageDays) || ageDays > refundRules.returnWindowDays) {
+            return {
+              decision: DECISIONS.DENY,
+              reasonCode: REASON_CODES.ORDER_INELIGIBLE_FOR_REFUND,
+              policyId: policy?.id || 'policy_support_refund',
+              riskLevel: RISK_LEVELS.MEDIUM,
+              requiresApproval: false,
+              message: `The configured ${refundRules.returnWindowDays}-day return period has passed. Warranty or exception review may still be available.`,
+              details: { purchaseDate: order.purchase_date, returnWindowDays: refundRules.returnWindowDays }
+            };
+          }
         }
 
         // Tiered Step-up Threshold (Amount > $150.00)

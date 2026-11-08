@@ -180,3 +180,27 @@ Executes an individual scenario (`scenario-a` through `scenario-h`).
 
 ### `POST /api/scenarios/run-all`
 Executes all 8 attack scenarios in parallel and returns pass/fail audit results.
+
+---
+
+## 6. Customer support sandbox
+
+### `POST /api/support/chat`
+Send `{ "message": "...", "conversationId": "optional existing id" }`. The backend binds the conversation to the server-selected demo identity, saves both messages, verifies any selected order against that identity, and returns a deterministic classification and response. Foreign/made-up order IDs receive a generic verification response. Safety hazards create urgent support tickets.
+
+### `GET /api/support/conversations/:id`
+Restores saved messages only when the conversation belongs to the selected demo user.
+
+### `GET /api/support/refund-approvals`
+Administrator-only list of persisted refund review requests.
+
+### `GET /api/support/admin/summary` and `GET /api/support/tickets`
+Administrator-only counts for open tickets/issues, refund approvals, and safety escalations; and a prioritized ticket/escalation queue.
+
+### `POST /api/support/tickets/:id/status`
+Administrator-only body: `{ "status": "IN_PROGRESS" | "RESOLVED" | "CLOSED" }`. The status change is written to the audit chain.
+
+### `POST /api/support/refund-approvals/:id/review`
+Administrator-only request body: `{ "decision": "APPROVE" | "REJECT", "note": "optional review note" }`. Approval claims the pending record, rechecks order ownership/payment/delivery and AgentShield policy, then executes an idempotent local sandbox refund. Rejection never executes the refund. The demo identity header is not authentication.
+
+The older `POST /api/support/direct-refund` endpoint remains behind the gateway and now also requires an open, classified support issue, a verified returnable product catalog record, a paid/delivered order, and the configured return window.

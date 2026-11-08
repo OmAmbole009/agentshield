@@ -86,7 +86,8 @@ class SecurityGateway {
         actionType: directAction.actionType,
         payload: directAction.payload,
         user,
-        agent
+        agent,
+        idempotencyKey
       });
       proposal = {
         actionType: directAction.actionType,
@@ -115,7 +116,8 @@ class SecurityGateway {
       actionType: proposal.actionType,
       payload: proposal.payload,
       user,
-      agent
+      agent,
+      idempotencyKey
     });
 
     this.auditLogger.logEvent({
@@ -318,7 +320,8 @@ class SecurityGateway {
       actionType,
       payload,
       user,
-      agent
+      agent,
+      idempotencyKey
     });
 
     // Note: if re-evaluation returns DENY (e.g. balance dropped in interim), deny execution!
@@ -411,6 +414,27 @@ class SecurityGateway {
   /**
    * Internal dispatcher to authorized business operations
    */
+  executeApprovedSupportRefund({ orderId, amount, reason, idempotencyKey, user, reviewer }) {
+    const actionType = ACTION_TYPES.ISSUE_REFUND;
+    const payload = { orderId, amount, reason, idempotencyKey };
+    const agent = { id: 'human-approved-support', permissions: ['refunds:execute'] };
+    const decision = this.policyEngine.evaluate({ actionType, payload, user, agent, idempotencyKey });
+    if (decision.decision === DECISIONS.DENY) throw new Error(`AgentShield denied reviewer execution: ${decision.message}`);
+    const result = this.executeAuthorizedAction({ actionType, payload, user, idempotencyKey, approvalId: `review_${reviewer.id}` });
+    this.auditLogger.logEvent({
+      requestId: `req_review_${crypto.randomUUID().replace(/-/g, '')}`,
+      eventType: AUDIT_EVENT_TYPES.ACTION_EXECUTED,
+      agentId: reviewer.id,
+      userId: user.id,
+      actionType,
+      decision: DECISIONS.ALLOW,
+      reasonCode: 'HUMAN_REVIEW_APPROVED',
+      policyId: decision.policyId,
+      payload: { orderId, amount, approvalId: `review_${reviewer.id}`, sandbox: true }
+    });
+    return result;
+  }
+
   executeAuthorizedAction({ actionType, payload, user, idempotencyKey, approvalId }) {
     switch (actionType) {
       case ACTION_TYPES.READ_BALANCE:

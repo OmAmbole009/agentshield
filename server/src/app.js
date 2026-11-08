@@ -90,7 +90,7 @@ function createApp(customDb = null) {
   app.use('/api/provider', createProviderRouter({ budgetGuard, gnaniAdapter }));
   app.use('/api/accounts', createAccountRouter({ bankingService, db }));
   app.use('/api/scenarios', createScenariosRouter({ securityGateway, bankingService, db }));
-  app.use('/api/support', createSupportRouter({ customerSupportService, securityGateway, db }));
+  app.use('/api/support', createSupportRouter({ customerSupportService, securityGateway, db, auditLogger }));
 
   // Serve static client bundle if built
   const clientDist = path.resolve(process.cwd(), 'client/dist');

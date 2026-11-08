@@ -9,7 +9,13 @@ function seedDatabase(db = null) {
 
   // Clear existing demo records
   database.exec(`
+    DELETE FROM support_messages;
+    DELETE FROM support_issues;
+    DELETE FROM support_tickets;
+    DELETE FROM support_conversations;
+    DELETE FROM refund_approval_requests;
     DELETE FROM order_refunds;
+    DELETE FROM support_products;
     DELETE FROM subscriptions;
     DELETE FROM orders;
     DELETE FROM customers;
@@ -256,6 +262,9 @@ function seedDatabase(db = null) {
     JSON.stringify({
       maxSingleAmount: 1000.00,
       stepUpThreshold: 150.00,
+      returnWindowDays: 30,
+      humanApprovalThreshold: 500,
+      sandboxOnly: true,
       requireCustomerOwnership: true,
       requireTenantMatch: true,
       requireRemainingBalance: true,
@@ -325,6 +334,14 @@ function seedDatabase(db = null) {
   );
 
   // 5. Seed Orders
+  const insertProduct = database.prepare('INSERT INTO support_products (sku,name,category,returnable,warranty_days) VALUES (?,?,?,?,?)');
+  insertProduct.run('SKU-AUDIO-441', 'Noise-Canceling Wireless Headphones', 'electronics', 1, 365);
+  insertProduct.run('SKU-FURN-901', 'Executive Smart Standing Desk', 'furniture', 1, 365);
+  insertProduct.run('SKU-CBL-102', 'USB-C Fast Charging Hub', 'accessories', 1, 180);
+  insertProduct.run('SKU-CHAIR-882', 'Ergonomic Mesh Office Chair', 'furniture', 1, 365);
+  insertProduct.run('SKU-KEY-311', 'Mechanical Keypad Pro', 'electronics', 1, 365);
+  insertProduct.run('SKU-CAM-800', 'Creator Studio Camera Kit', 'electronics', 1, 365);
+
   const insertOrder = database.prepare(`
     INSERT INTO orders (id, customer_id, tenant_id, total_amount, refunded_amount, currency, status, items_json, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -376,6 +393,21 @@ function seedDatabase(db = null) {
   );
 
   insertOrder.run(
+    'ord_sarah_104',
+    'cust_sarah_01',
+    'tenant_retail',
+    800.00,
+    0.0,
+    'USD',
+    'DELIVERED',
+    JSON.stringify([
+      { sku: 'SKU-CAM-800', name: 'Creator Studio Camera Kit', price: 800.00, quantity: 1 }
+    ]),
+    now,
+    now
+  );
+
+  insertOrder.run(
     'ord_michael_201',
     'cust_michael_02',
     'tenant_retail',
@@ -404,6 +436,16 @@ function seedDatabase(db = null) {
     now,
     now
   );
+
+  // Realistic verification facts for support demos, including old and disputed orders.
+  const day = n => new Date(Date.now() - n * 86400000).toISOString();
+  const setOrderFacts = database.prepare('UPDATE orders SET purchase_date=?, delivery_date=?, delivery_status=?, payment_status=? WHERE id=?');
+  setOrderFacts.run(day(5), day(3), 'DELIVERED', 'PAID', 'ord_sarah_101');
+  setOrderFacts.run(day(120), day(115), 'DELIVERED', 'PAID', 'ord_sarah_102');
+  setOrderFacts.run(day(20), day(18), 'DELIVERED', 'PAID', 'ord_sarah_103');
+  setOrderFacts.run(day(7), day(5), 'DELIVERED', 'PAID', 'ord_sarah_104');
+  setOrderFacts.run(day(8), null, 'IN_TRANSIT', 'PAID', 'ord_michael_201');
+  setOrderFacts.run(day(2), null, 'DISPUTED', 'PAID', 'ord_alex_301');
 
   // 6. Seed Subscriptions
   const insertSub = database.prepare(`
@@ -476,7 +518,7 @@ function seedDatabase(db = null) {
     accounts: 3,
     recipients: 3,
     customers: 3,
-    orders: 5,
+    orders: 6,
     subscriptions: 3,
     policies: 9
   };
