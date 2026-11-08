@@ -165,16 +165,17 @@ class DeterministicIntentExtractor {
     // 3. Transfer Funds Intents
     // e.g., "Transfer $500 to recp_landlord_prop", "Send 1200 dollars to landlord", "Pay electric company $150", "Transfer $15000 to recp_electric_co"
     if (lower.includes('transfer') || lower.includes('send') || lower.includes('pay ') || lower.includes('wire ')) {
-      // Extract amount
-      const amountMatch = clean.match(/\$?\s*((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)\s*(?:dollars|usd)?/i);
+      // Extract amount from normalized text (where spoken numbers have been converted to digits)
+      const amountMatch = normalized.match(/\$?\s*((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)\s*(?:dollars|usd)?/i)
+        || clean.match(/\$?\s*((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)\s*(?:dollars|usd)?/i);
       let amount = 0;
       if (amountMatch) {
         amount = parseFloat(amountMatch[1].replace(/,/g, ''));
       }
 
       // Extract Recipient
-      let recipientId = 'recp_landlord_prop'; // Default demo recipient if mentioned landlord
-      const recpMatch = clean.match(/recp_[a-zA-Z0-9_]+/);
+      let recipientId = 'recp_landlord_prop'; // Default demo recipient
+      const recpMatch = normalized.match(/recp_[a-zA-Z0-9_]+/);
       if (recpMatch) {
         recipientId = recpMatch[0];
       } else if (lower.includes('electric') || lower.includes('utility') || lower.includes('power')) {
@@ -185,7 +186,7 @@ class DeterministicIntentExtractor {
         recipientId = 'recp_landlord_prop';
       }
 
-      const fromAccMatch = clean.match(/from\s+(acc_[a-zA-Z0-9_]+)/i);
+      const fromAccMatch = normalized.match(/from\s+(acc_[a-zA-Z0-9_]+)/i);
 
       return {
         actionType: ACTION_TYPES.TRANSFER_FUNDS,

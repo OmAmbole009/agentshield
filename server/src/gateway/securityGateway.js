@@ -377,6 +377,24 @@ class SecurityGateway {
       payload: { challengeId, submittedCode: '******' }
     });
 
+    // Check idempotency replay before challenge validation
+    if (idempotencyKey) {
+      const existingTx = this.db.prepare('SELECT * FROM transactions WHERE idempotency_key = ?').get(idempotencyKey);
+      if (existingTx) {
+        const replayResult = {
+          isReplay: true,
+          transaction: existingTx,
+          message: 'Idempotent request: returning previous completed execution.'
+        };
+        return {
+          success: true,
+          decision: DECISIONS.ALLOW,
+          executionResult: replayResult,
+          responseText: this.formatSuccessResponse(actionType, replayResult)
+        };
+      }
+    }
+
     // 1. Challenge validation & Parameter tampering check
     const validation = this.challengeService.validateAndConsumeChallenge({
       challengeId,
@@ -705,6 +723,7 @@ class SecurityGateway {
       /system instructions?:[^\n.]*\.?/gi,
       /\[SYSTEM\]:/gi,
       /<<SYS>>[\s\S]*?<<\/SYS>>/gi,
+      /<<\/?SYS>>/gi,
       /<\|im_start\|>system[\s\S]*?<\|im_end\|>/gi
     ];
     for (const pat of instructionPatterns) {
@@ -715,7 +734,7 @@ class SecurityGateway {
     }
 
     // 2. Strip internal stack traces
-    const stackTracePattern = /(?:Error|Exception|TypeError|ReferenceError):\s+.*\n(?:\s+at\s+.*)+|\s+at\s+.*(?:\.js|\.ts):\d+:\d+/g;
+    const stackTracePattern = /(?:Error|Exception|TypeError|ReferenceError):\s+.*\n(?:\s+at\s+.*)+|(?:\s*at\s+.*(?:\.js|\.ts):\d+:\d+)|(?:\bat\s+Object\.<anonymous>)/g;
     if (stackTracePattern.test(filtered)) {
       reasons.push('STACK_TRACE_LEAK');
       filtered = filtered.replace(stackTracePattern, '[INTERNAL_ERROR_STACK_REDACTED]');

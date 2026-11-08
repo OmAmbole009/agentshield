@@ -88,6 +88,7 @@ function createApp(customDb = null) {
   app.use('/api/policies', createPolicyRouter({ db }));
   app.use('/api/audit', createAuditRouter({ auditLogger }));
   app.use('/api/provider', createProviderRouter({ budgetGuard, gnaniAdapter }));
+  app.use('/api/providers', createProviderRouter({ budgetGuard, gnaniAdapter }));
   app.use('/api/accounts', createAccountRouter({ bankingService, db }));
   app.use('/api/scenarios', createScenariosRouter({ securityGateway, bankingService, db }));
   app.use('/api/support', createSupportRouter({ customerSupportService, securityGateway, db, auditLogger }));

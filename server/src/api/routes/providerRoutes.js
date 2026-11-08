@@ -4,20 +4,25 @@ function createProviderRouter({ budgetGuard, gnaniAdapter }) {
   const router = express.Router();
 
   /**
-   * GET /api/provider/usage
+   * GET /api/provider/usage and /api/provider/status
    * Telemetry on Gnani and AI provider calls, credits, and budget guard status.
    */
-  router.get('/usage', (req, res, next) => {
+  const usageHandler = (req, res, next) => {
     try {
       const summary = budgetGuard.getUsageSummary();
       res.json({
         success: true,
+        status: summary.status,
+        provider: 'gnani',
         summary
       });
     } catch (err) {
       next(err);
     }
-  });
+  };
+
+  router.get('/usage', usageHandler);
+  router.get('/status', usageHandler);
 
   /**
    * POST /api/provider/test-speech

@@ -3,11 +3,7 @@ const express = require('express');
 function createAuditRouter({ auditLogger }) {
   const router = express.Router();
 
-  /**
-   * GET /api/audit
-   * Searchable, filterable audit event explorer
-   */
-  router.get('/', (req, res, next) => {
+  const getEventsHandler = (req, res, next) => {
     try {
       const limit = parseInt(req.query.limit || '50', 10);
       const offset = parseInt(req.query.offset || '0', 10);
@@ -25,23 +21,34 @@ function createAuditRouter({ auditLogger }) {
     } catch (err) {
       next(err);
     }
-  });
+  };
 
   /**
-   * GET /api/audit/verify-chain
-   * Cryptographically verifies the SHA-256 hash chain across all historical audit records.
+   * GET /api/audit and /api/audit/events
+   * Searchable, filterable audit event explorer
    */
-  router.get('/verify-chain', (req, res, next) => {
+  router.get('/', getEventsHandler);
+  router.get('/events', getEventsHandler);
+
+  const verifyChainHandler = (req, res, next) => {
     try {
       const report = auditLogger.verifyChainIntegrity();
       res.json({
         success: true,
+        valid: report.isChainValid,
         report
       });
     } catch (err) {
       next(err);
     }
-  });
+  };
+
+  /**
+   * GET /api/audit/verify-chain and /api/audit/verify
+   * Cryptographically verifies the SHA-256 hash chain across all historical audit records.
+   */
+  router.get('/verify-chain', verifyChainHandler);
+  router.get('/verify', verifyChainHandler);
 
   return router;
 }

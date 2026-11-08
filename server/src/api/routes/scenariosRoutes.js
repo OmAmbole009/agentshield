@@ -383,6 +383,10 @@ function createScenariosRouter({ securityGateway, bankingService, db }) {
    */
   router.post('/run/:id', async (req, res, next) => {
     try {
+      if (securityGateway.policyEngine) {
+        securityGateway.policyEngine.resetSessionVelocity(req.user?.id);
+      }
+
       const scenarioId = req.params.id;
       const scenario = SCENARIOS.find(s => s.id === scenarioId);
       if (!scenario) {
@@ -412,6 +416,10 @@ function createScenariosRouter({ securityGateway, bankingService, db }) {
    */
   router.post('/run-all', async (req, res, next) => {
     try {
+      if (securityGateway.policyEngine) {
+        securityGateway.policyEngine.resetSessionVelocity(req.user?.id);
+      }
+
       const includeEnterprise = req.query.includeEnterprise === 'true' ||
         req.body?.includeEnterprise === true ||
         req.query.all === 'true' ||

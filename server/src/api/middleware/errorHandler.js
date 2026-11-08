@@ -5,7 +5,7 @@ function errorHandler(err, req, res, next) {
   res.status(statusCode).json({
     success: false,
     error: err.message || 'Internal Server Error',
-    errorCode: err.code || 'INTERNAL_ERROR',
+    errorCode: err.code || (statusCode === 403 ? 'UNAUTHORIZED_ACCESS' : 'INTERNAL_ERROR'),
     timestamp: new Date().toISOString()
   });
 }

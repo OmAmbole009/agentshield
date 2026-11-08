@@ -27,7 +27,9 @@ class CustomerSupportService {
     }
 
     if (customer.user_id !== user.id && user.role !== 'admin') {
-      throw new Error(`Unauthorized access to customer ${customerId}.`);
+      const err = new Error(`Unauthorized access to customer ${customerId}.`);
+      err.status = 403;
+      throw err;
     }
 
     const subscriptions = this.db.prepare('SELECT * FROM subscriptions WHERE customer_id = ?').all(customerId);
@@ -55,7 +57,9 @@ class CustomerSupportService {
     }
 
     if (customer.user_id !== user.id && user.role !== 'admin') {
-      throw new Error(`Unauthorized access to customer orders for ${customerId}.`);
+      const err = new Error(`Unauthorized access to customer orders for ${customerId}.`);
+      err.status = 403;
+      throw err;
     }
 
     const orders = this.db.prepare('SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC').all(customerId);
@@ -168,6 +172,7 @@ class CustomerSupportService {
       /system instructions?:[^\n.]*\.?/gi,
       /\[SYSTEM\]:/gi,
       /<<SYS>>[\s\S]*?<<\/SYS>>/gi,
+      /<<\/?SYS>>/gi,
       /<\|im_start\|>system[\s\S]*?<\|im_end\|>/gi
     ];
     for (const pat of instructionPatterns) {
@@ -178,7 +183,7 @@ class CustomerSupportService {
     }
 
     // 2. Strip internal stack traces
-    const stackTracePattern = /(?:Error|Exception|TypeError|ReferenceError):\s+.*\n(?:\s+at\s+.*)+|\s+at\s+.*(?:\.js|\.ts):\d+:\d+/g;
+    const stackTracePattern = /(?:Error|Exception|TypeError|ReferenceError):\s+.*\n(?:\s+at\s+.*)+|(?:\s*at\s+.*(?:\.js|\.ts):\d+:\d+)|(?:\bat\s+Object\.<anonymous>)/g;
     if (stackTracePattern.test(filtered)) {
       reasons.push('STACK_TRACE_LEAK');
       filtered = filtered.replace(stackTracePattern, '[INTERNAL_ERROR_STACK_REDACTED]');
