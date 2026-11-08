@@ -5,6 +5,8 @@ node_modules/
 data/
 *.sqlite
 *.sqlite-journal
+*.db
+*.db-journal
 dist/
 build/
 .DS_Store

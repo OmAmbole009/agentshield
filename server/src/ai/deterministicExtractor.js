@@ -1,5 +1,55 @@
 const { ACTION_TYPES } = require('../registry/actions');
 
+function spokenWordsToNumber(str) {
+  const small = {
+    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+    twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90
+  };
+  const magnitudes = { hundred: 100, thousand: 1000, lakh: 100000, crore: 10000000, million: 1000000 };
+  const tokens = str.toLowerCase().replace(/-/g, ' ').split(/\s+/).filter(Boolean);
+  let total = 0;
+  let current = 0;
+  let hasNumber = false;
+
+  for (const token of tokens) {
+    if (small[token] !== undefined) {
+      current += small[token];
+      hasNumber = true;
+    } else if (token === 'hundred') {
+      current = (current === 0 ? 1 : current) * 100;
+      hasNumber = true;
+    } else if (magnitudes[token] !== undefined) {
+      current = (current === 0 ? 1 : current) * magnitudes[token];
+      total += current;
+      current = 0;
+      hasNumber = true;
+    } else if (token === 'and') {
+      // skip
+    } else {
+      return null;
+    }
+  }
+  return hasNumber ? total + current : null;
+}
+
+function normalizeSpokenNumbers(text) {
+  if (!text || typeof text !== 'string') return text;
+  const sequenceRegex = /\b(?:(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|lakh|crore|million|and)[-\s]+)+(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|lakh|crore|million)\b/gi;
+  return text.replace(sequenceRegex, (match) => {
+    const val = spokenWordsToNumber(match);
+    return val !== null ? String(val) : match;
+  });
+}
+
+function stripAsrDisfluencies(text) {
+  if (!text || typeof text !== 'string') return text;
+  return text
+    .replace(/\b(uh|um|uhh|umm|er|ah|haan|matlab|arre|accha|achha|you know)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 class DeterministicIntentExtractor {
   /**
    * Deterministically parses a user's natural language input into a structured action proposal.
@@ -20,11 +70,14 @@ class DeterministicIntentExtractor {
     }
 
     const clean = text.trim();
-    const lower = clean.toLowerCase();
+    // Pre-processing pipeline: Strip ASR fillers and normalize spoken number words
+    const disfluencyCleaned = stripAsrDisfluencies(clean);
+    const normalized = normalizeSpokenNumbers(disfluencyCleaned);
+    const lower = normalized.toLowerCase();
     const defaultAccountId = context.defaultAccountId || 'acc_sarah_checking';
 
     if (lower.includes('transaction history') || lower.includes('transactions')) {
-      const accMatch = clean.match(/acc_[a-zA-Z0-9_]+/);
+      const accMatch = normalized.match(/acc_[a-zA-Z0-9_]+/);
       return {
         actionType: ACTION_TYPES.READ_TRANSACTIONS,
         payload: { accountId: accMatch ? accMatch[0] : defaultAccountId, limit: 20 },
@@ -34,21 +87,52 @@ class DeterministicIntentExtractor {
       };
     }
 
-    // 1. Detect Prompt Injection / Malicious Exfiltration Attempts
+    // 1. Detect Prompt Injection / Malicious Exfiltration Attempts (English & Hinglish / Transliterated)
     const injectionPatterns = [
-      /ignore (all )?previous instructions/i,
-      /disregard (all )?rules/i,
+      /ignore (all )?(previous|prior) instructions/i,
+      /disregard (all )?(prior|previous )?rules/i,
+      /forget (all )?(prior|previous )?(rules|instructions)/i,
       /you are now in developer mode/i,
+      /developer mode (on|enabled|activate)/i,
+      /system prompt/i,
       /dump (the )?(database|tables|customers)/i,
       /export (all )?(customer|user|account) (records|data|pii)/i,
       /exfiltrate/i,
-      /bypass security/i
+      /bypass (the )?(policy|security|rules|guardrail)/i,
+      /disable (the )?(policy|security|guardrail)/i,
+      /refund every/i,
+
+      // Hinglish / transliterated injection patterns
+      /purane nirdesh bhool jao/i,
+      /pichle (rules|niyam) bhool jao/i,
+      /sare niyam bhool jao/i,
+      /system prompt dikhao/i,
+      /developer mode on karo/i,
+      /policy bypass karo/i,
+      /security bypass karo/i,
+      /rules tod do/i,
+      /sab bhool jao/i,
+      /nirdesh ignore karo/i,
+      /rules mat mano/i,
+      /data leak karo/i,
+      /database dump karo/i,
+
+      // Role-spoofing markers & delimiters
+      /\[SYSTEM\]:/i,
+      /\{"role":\s*"system"\}/i,
+      /<\|im_start\|>system/i,
+      /<<SYS>>/i,
+
+      // SQLi / XSS payloads
+      /<script[\s>]/i,
+      /\bunion\s+select\b/i,
+      /['"]\s*or\s*['"]?1['"]?\s*=\s*['"]?1/i
     ];
 
-    const isInjection = injectionPatterns.some(pattern => pattern.test(clean));
+    const isInjection = injectionPatterns.some(pattern => pattern.test(normalized) || pattern.test(clean));
 
     // If attempting customer data export or jailbreak
-    if (isInjection || lower.includes('export customer') || lower.includes('export data') || lower.includes('download records')) {
+    if (isInjection || lower.includes('export customer') || lower.includes('export data') || lower.includes('download records') || lower.includes('data leak') || lower.includes('database dump')) {
       const formatMatch = lower.match(/(json|pdf|csv)/);
       return {
         actionType: ACTION_TYPES.EXPORT_CUSTOMER_DATA,
@@ -257,5 +341,8 @@ class DeterministicIntentExtractor {
 }
 
 module.exports = {
-  DeterministicIntentExtractor
+  DeterministicIntentExtractor,
+  normalizeSpokenNumbers,
+  stripAsrDisfluencies,
+  spokenWordsToNumber
 };

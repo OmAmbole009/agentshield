@@ -18,10 +18,59 @@ This document outlines the security controls implemented in AgentShield, their t
 | **Data Exfiltration Blocker** | Prompt injection exfiltrating customer PII (Scenario D) | Conversational agents blocked from `EXPORT_CUSTOMER_DATA` | **ENFORCED** |
 | **Audit Chain Verifiability** | Cover-up of unauthorized actions via DB edits | SHA-256 hash chaining across all audit events | **ENFORCED** |
 | **Credit-Budget Protection** | Uncontrolled billing loops / financial depletion | Conservative budget guard with 1,000 credit hard safety reserve | **ENFORCED** |
+| **Voice / ASR Trust Step-Up** | Synthetic voice spoofing, degraded audio transfers | Downgrades `ALLOW` to `VERIFY` if `asrConfidence < 0.78` or `voiceBiometricScore < 0.80` | **ENFORCED** |
+| **Bidirectional PII Redaction** | Leakage of Indian banking PII (Cards, Aadhaar, PAN, OTP, Phone) | Tokenized placeholder scrubbing (`<REDACTED_*>`) & `PII_REDACTED` audit logging | **ENFORCED** |
+| **Multilingual Injection Guard** | English & Hinglish transliterated jailbreak attacks | Regex & delimiter inspection across Latin & Indic transliterated payloads | **ENFORCED** |
+| **Session Velocity Lockout** | Brute-force & repetitive multi-turn attack vectors | Automatic `SESSION_LOCKDOWN` after >3 policy denials/injections in rolling window | **ENFORCED** |
+| **Output Egress Filter** | Exfiltration of instructions, stack traces, raw SQL, PII in replies | Pre-transmission response scanner redacting internal errors and unmasked PII | **ENFORCED** |
+| **Semantic IDOR Ownership** | Horizontal privilege escalation to other accounts/customers | Strict user and tenant context validation across all target entities | **ENFORCED** |
 
 ---
 
-## 2. What the Cryptographic Hash Chain Detects and Does Not Detect
+## 2. Enterprise Voice & Data Guardrail Architecture
+
+```
+User Audio / Text Input
+         │
+         ▼
+┌────────────────────────────────────────────────────────┐
+│ Phase 1: Input Ingress Guardrails                     │
+│  ├─ Voice Disfluency & Spoken Number Normalization    │
+│  ├─ Bidirectional PII Scrubber (Cards, Aadhaar, PAN)   │
+│  └─ Multilingual & Hinglish Prompt Injection Detector  │
+└────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌────────────────────────────────────────────────────────┐
+│ Phase 2: Trusted Deterministic Policy Engine           │
+│  ├─ Semantic Ownership & IDOR Validation               │
+│  ├─ Multi-Turn Session Velocity & Lockdown Guard       │
+│  ├─ Tiered Limits & Role-Based Permissions             │
+│  └─ ASR & Voice Biometric Trust Step-Up Rule          │
+└────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌────────────────────────────────────────────────────────┐
+│ Phase 3: Cryptographic Binding & Execution             │
+│  ├─ Single-Use Step-Up Challenges (SHA-256 bound)      │
+│  ├─ Idempotent State Mutation with Atomic Rollback     │
+│  └─ Resilient Gnani Provider Adapter (Auto Fallback)   │
+└────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌────────────────────────────────────────────────────────┐
+│ Phase 4: Output Egress & Cryptographic Audit Trail     │
+│  ├─ Outbound Egress Filter (Stripping SQL/Stacks/PII)  │
+│  └─ SHA-256 Tamper-Evident Merkle-Linked Audit Chain   │
+└────────────────────────────────────────────────────────┘
+         │
+         ▼
+Clean, Filtered Outbound Speech / Response Text
+```
+
+---
+
+## 3. What the Cryptographic Hash Chain Detects and Does Not Detect
 
 ### What It Detects:
 - **Record Modification:** If an attacker modifies any historical row (e.g., changes `DENY` to `ALLOW` or alters an amount), recalculating the SHA-256 hash immediately fails on that block.

@@ -9,7 +9,18 @@ function createGatewayRouter({ securityGateway }) {
    */
   router.post('/process', async (req, res, next) => {
     try {
-      const { text, audioBase64, audioOptions, actionType, payload, generateAudio, idempotencyKey } = req.body;
+      const {
+        text,
+        audioBase64,
+        audioOptions,
+        actionType,
+        payload,
+        generateAudio,
+        idempotencyKey,
+        asrConfidence,
+        voiceBiometricScore,
+        sessionId
+      } = req.body;
 
       let audioBuffer = null;
       if (audioBase64) {
@@ -29,7 +40,10 @@ function createGatewayRouter({ securityGateway }) {
         user: req.user,
         agent: req.agent,
         idempotencyKey,
-        generateAudio: !!generateAudio
+        generateAudio: !!generateAudio,
+        asrConfidence: asrConfidence !== undefined ? Number(asrConfidence) : null,
+        voiceBiometricScore: voiceBiometricScore !== undefined ? Number(voiceBiometricScore) : null,
+        sessionId: sessionId || req.headers['x-session-id'] || null
       });
 
       res.json({

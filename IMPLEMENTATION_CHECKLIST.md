@@ -100,3 +100,32 @@
 - [x] `docs/SECURITY_CONTROLS.md`
 - [x] `docs/DEMO_WALKTHROUGH.md`
 - [x] `docs/GNANI_INTEGRATION.md`
+
+---
+
+### Stage 11: Enterprise Voice & Security Guardrails (Gnani AI Challenge Upgrade)
+- [x] **Voice/ASR Trust Gating & Spoken Normalization (P0):**
+  - Integrated `asrConfidence` and `voiceBiometricScore` telemetry into gateway request context.
+  - Step-up verification rule downgrades mutating actions (`ALLOW` → `VERIFY`, reason `LOW_VOICE_TRUST_SCORE`) when `asrConfidence < 0.78` or `voiceBiometricScore < 0.80`.
+  - Spoken number words conversion (`one thousand two hundred` → `1200`) and acoustic filler noise stripping (`uh`, `um`, `ah`, `like`, `you know`).
+- [x] **Multilingual & Hinglish Prompt Injection Defense (P0):**
+  - Deterministic regex matcher for adversarial jailbreaks across English and Hinglish/transliterated Hindi (*"purane nirdesh bhool jao"*, *"sare niyam bhool jao"*, *"tum ab developer mode me ho"*).
+  - Role-spoofing markers blocked (`[SYSTEM]:`, `<|im_start|>system`, `{"role": "system"}`).
+- [x] **Bidirectional Indian Banking PII Scrubber (P0):**
+  - Automated regex scrubber for 16-digit cards, CVV, Aadhaar, PAN (`[A-Z]{5}[0-9]{4}[A-Z]{1}`), 6-digit OTP, phone numbers, and emails.
+  - Tokenized placeholders (`<REDACTED_*>`) emitted before LLM/Gnani calls.
+  - Tamper-evident hash chain logging with event type `PII_REDACTED`.
+- [x] **Stateful Session Velocity & Semantic IDOR Guardrails (P0):**
+  - Sliding 15-minute rolling window tracking policy denials per user/session.
+  - Exceeding 3 denials triggers `SESSION_LOCKDOWN` on mutating actions with audit logging.
+  - Semantic ownership check blocks cross-account/cross-customer access attempts (IDOR defense).
+- [x] **Output Egress Filter & Resilient Gnani Adapter (P0):**
+  - Outbound response scanner sanitizes leaked system instructions, stack traces, raw SQL queries, and unmasked PII (`OUTPUT_EGRESS_FILTERED`).
+  - `ResilientGnaniAdapter` implements 5,000ms circuit breaker timeout and budget-reserve aware fallback to deterministic extraction.
+- [x] **Red-Team Scenarios I through L & UI Telemetry Badges:**
+  - Added 4 enterprise scenarios: Voice ASR Low Confidence (I), Hinglish Injection (J), PII Scrubbing (K), and Multi-Turn Velocity Lockout (L).
+  - Telemetry badges (`PII Redacted`, `Voice Trust Score`, `Session Risk Level`, `Egress Filtered`) surfaced in `LivePlayground`, `SecurityTestLab`, `OverviewDashboard`, and `AuditExplorer`.
+- [x] **Automated Verification:**
+  - 84/84 unit and integration tests passing across 8 suites (`npm test`).
+  - 11/11 acceptance checks passing (`node acceptance_check.js`).
+  - Production React bundle builds cleanly with zero errors (`npm run build`).

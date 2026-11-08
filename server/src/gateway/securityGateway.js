@@ -36,7 +36,10 @@ class SecurityGateway {
     agent,
     idempotencyKey = null,
     autoExecuteAllowed = true,
-    generateAudio = false
+    generateAudio = false,
+    asrConfidence = null,
+    voiceBiometricScore = null,
+    sessionId = null
   }) {
     const requestId = `req_${crypto.randomUUID().replace(/-/g, '')}`;
     const startTime = Date.now();
@@ -52,6 +55,26 @@ class SecurityGateway {
 
     let recognizedText = text;
     let voiceMetadata = null;
+    let piiRedacted = false;
+    let redactedPiiTypes = [];
+
+    // Pre-Processing Guardrail: Bidirectional PII Scrubber for textual input
+    if (recognizedText) {
+      const scrubResult = this.scrubPII(recognizedText);
+      if (scrubResult.piiDetected) {
+        piiRedacted = true;
+        redactedPiiTypes = scrubResult.redactedTypes;
+        recognizedText = scrubResult.scrubbedText;
+        this.auditLogger.logEvent({
+          requestId,
+          eventType: AUDIT_EVENT_TYPES.PII_REDACTED,
+          agentId: agent?.id,
+          userId: user?.id,
+          reasonCode: 'PII_REDACTED',
+          payload: { redactedTypes: scrubResult.redactedTypes }
+        });
+      }
+    }
 
     // 2. Voice Pipeline: Speech-to-Text if audio buffer is provided
     if (audioBuffer && this.gnaniAdapter) {
@@ -63,6 +86,28 @@ class SecurityGateway {
           model: sttResult.model,
           isMock: sttResult.isMock
         };
+        // Auto-populate asrConfidence if not explicitly supplied
+        if (asrConfidence === null && sttResult.confidence !== undefined) {
+          asrConfidence = sttResult.confidence;
+        }
+
+        // Scrub PII from transcribed audio
+        if (recognizedText) {
+          const sttScrub = this.scrubPII(recognizedText);
+          if (sttScrub.piiDetected) {
+            piiRedacted = true;
+            redactedPiiTypes = Array.from(new Set([...redactedPiiTypes, ...sttScrub.redactedTypes]));
+            recognizedText = sttScrub.scrubbedText;
+            this.auditLogger.logEvent({
+              requestId,
+              eventType: AUDIT_EVENT_TYPES.PII_REDACTED,
+              agentId: agent?.id,
+              userId: user?.id,
+              reasonCode: 'PII_REDACTED',
+              payload: { redactedTypes: sttScrub.redactedTypes }
+            });
+          }
+        }
       } catch (err) {
         this.auditLogger.logEvent({
           requestId,
@@ -87,7 +132,10 @@ class SecurityGateway {
         payload: directAction.payload,
         user,
         agent,
-        idempotencyKey
+        idempotencyKey,
+        asrConfidence,
+        voiceBiometricScore,
+        sessionId
       });
       proposal = {
         actionType: directAction.actionType,
@@ -117,8 +165,29 @@ class SecurityGateway {
       payload: proposal.payload,
       user,
       agent,
-      idempotencyKey
+      idempotencyKey,
+      asrConfidence,
+      voiceBiometricScore,
+      sessionId
     });
+
+    // Track session velocity & cumulative risk violations
+    const sessionKey = sessionId || user?.id;
+    if (policyDecision.decision === DECISIONS.DENY || proposal.isInjectionDetected) {
+      this.policyEngine.recordSessionViolation(sessionKey);
+      if (this.policyEngine.isSessionLockedDown(sessionKey)) {
+        this.auditLogger.logEvent({
+          requestId,
+          eventType: AUDIT_EVENT_TYPES.SESSION_LOCKDOWN,
+          agentId: agent?.id,
+          userId: user?.id,
+          actionType: proposal.actionType,
+          decision: DECISIONS.DENY,
+          reasonCode: REASON_CODES.SESSION_LOCKDOWN,
+          payload: { sessionKey, reason: 'Exceeded 3 policy denials or injection attempts' }
+        });
+      }
+    }
 
     this.auditLogger.logEvent({
       requestId,
@@ -220,6 +289,24 @@ class SecurityGateway {
       }
     }
 
+    // Output Egress Guardrail: Scan outbound response for leaked instructions, stack traces, raw SQL, or unmasked PII
+    let egressFiltered = false;
+    if (responseText) {
+      const egressCheck = this.filterEgressResponse(responseText);
+      if (egressCheck.egressFiltered) {
+        egressFiltered = true;
+        responseText = egressCheck.filteredText;
+        this.auditLogger.logEvent({
+          requestId,
+          eventType: AUDIT_EVENT_TYPES.OUTPUT_EGRESS_FILTERED,
+          agentId: agent?.id,
+          userId: user?.id,
+          reasonCode: 'OUTPUT_EGRESS_FILTERED',
+          payload: { reasons: egressCheck.reasons }
+        });
+      }
+    }
+
     // 6. Voice Synthesis if requested (Timbre v2.5/v3.0)
     if (generateAudio && this.gnaniAdapter && responseText) {
       try {
@@ -256,7 +343,13 @@ class SecurityGateway {
       executionResult,
       responseText,
       speechAudio,
-      durationMs
+      durationMs,
+      piiRedacted,
+      redactedPiiTypes,
+      egressFiltered,
+      voiceTrustScore: asrConfidence !== null ? Number(asrConfidence) : (voiceMetadata?.confidence ?? null),
+      voiceBiometricScore: voiceBiometricScore !== null ? Number(voiceBiometricScore) : null,
+      sessionRiskLevel: this.policyEngine.isSessionLockedDown(sessionKey) ? 'CRITICAL_LOCKDOWN' : 'NORMAL'
     };
   }
 
@@ -368,14 +461,27 @@ class SecurityGateway {
         payload: executionResult
       });
 
-      const responseText = this.formatSuccessResponse(actionType, executionResult);
+      const rawResponseText = this.formatSuccessResponse(actionType, executionResult);
+      const egressCheck = this.filterEgressResponse(rawResponseText);
+      const responseText = egressCheck.filteredText;
+      if (egressCheck.egressFiltered) {
+        this.auditLogger.logEvent({
+          requestId,
+          eventType: AUDIT_EVENT_TYPES.OUTPUT_EGRESS_FILTERED,
+          agentId: agent?.id,
+          userId: user?.id,
+          reasonCode: 'OUTPUT_EGRESS_FILTERED',
+          payload: { reasons: egressCheck.reasons }
+        });
+      }
 
       return {
         success: true,
         decision: DECISIONS.ALLOW,
         executionResult,
         responseText,
-        challengeId
+        challengeId,
+        egressFiltered: egressCheck.egressFiltered
       };
     } catch (execErr) {
       this.auditLogger.logEvent({
@@ -511,6 +617,135 @@ class SecurityGateway {
       default:
         throw new Error(`Cannot execute unsupported action: ${actionType}`);
     }
+  }
+
+  /**
+   * Bidirectional PII Scrubber: Detects and redacts sensitive Indian and banking PII.
+   */
+  scrubPII(text) {
+    if (!text || typeof text !== 'string') {
+      return { scrubbedText: text, piiDetected: false, redactedTypes: [] };
+    }
+
+    let scrubbed = text;
+    const redactedTypes = new Set();
+
+    // 1. Credit / Debit Card: 16 digits (e.g. 4111 2222 3333 4444, 4111-2222-3333-4444, 4111222233334444)
+    const cardRegex = /\b(?:\d{4}[ -]?){3}\d{4}\b/g;
+    if (cardRegex.test(scrubbed)) {
+      redactedTypes.add('CARD');
+      scrubbed = scrubbed.replace(cardRegex, '<REDACTED_CARD>');
+    }
+
+    // 2. CVV / CVC (3-4 digits labeled)
+    const cvvRegex = /\b(?:cvv|cvc|security\s*code)[:\s]*([0-9]{3,4})\b/gi;
+    if (cvvRegex.test(scrubbed)) {
+      redactedTypes.add('CVV');
+      scrubbed = scrubbed.replace(cvvRegex, (match, code) => match.replace(code, '<REDACTED_CVV>'));
+    }
+
+    // 3. Aadhaar: 12 digits (4 4 4 digits with optional space or hyphen)
+    const aadhaarRegex = /\b\d{4}[ -]?\d{4}[ -]?\d{4}\b/g;
+    if (aadhaarRegex.test(scrubbed)) {
+      redactedTypes.add('AADHAAR');
+      scrubbed = scrubbed.replace(aadhaarRegex, '<REDACTED_AADHAAR>');
+    }
+
+    // 4. PAN: [A-Z]{5}[0-9]{4}[A-Z]{1}
+    const panRegex = /\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b/g;
+    if (panRegex.test(scrubbed)) {
+      redactedTypes.add('PAN');
+      scrubbed = scrubbed.replace(panRegex, '<REDACTED_PAN>');
+    }
+
+    // 5. OTP / Verification code (4-8 digits labeled)
+    const otpRegex = /\b(?:otp|one[- ]time[- ]password|verification code)[:\s]*([0-9]{4,8})\b/gi;
+    if (otpRegex.test(scrubbed)) {
+      redactedTypes.add('OTP');
+      scrubbed = scrubbed.replace(otpRegex, (match, code) => match.replace(code, '<REDACTED_OTP>'));
+    }
+
+    // 6. Emails
+    const emailRegex = /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g;
+    if (emailRegex.test(scrubbed)) {
+      redactedTypes.add('EMAIL');
+      scrubbed = scrubbed.replace(emailRegex, '<REDACTED_EMAIL>');
+    }
+
+    // 7. Phone numbers: Indian mobile (+91-9876543210, 09876543210, 9876543210)
+    const phoneRegex = /(?:\+91[\s-]?)?[6789]\d{9}\b/g;
+    if (phoneRegex.test(scrubbed)) {
+      redactedTypes.add('PHONE');
+      scrubbed = scrubbed.replace(phoneRegex, '<REDACTED_PHONE>');
+    }
+
+    return {
+      scrubbedText: scrubbed,
+      piiDetected: redactedTypes.size > 0,
+      redactedTypes: Array.from(redactedTypes)
+    };
+  }
+
+  /**
+   * Output Egress Guardrail: Scans and scrubs outbound agent/LLM replies.
+   */
+  filterEgressResponse(text) {
+    if (!text || typeof text !== 'string') {
+      return { filteredText: text, egressFiltered: false, reasons: [] };
+    }
+
+    let filtered = text;
+    const reasons = [];
+
+    // 1. Strip leaked system instructions or prompt markers
+    const instructionPatterns = [
+      /You are an action extraction assistant[^\n.]*\.?/gi,
+      /You are a customer support agent[^\n.]*\.?/gi,
+      /system prompt:[^\n.]*\.?/gi,
+      /system instructions?:[^\n.]*\.?/gi,
+      /\[SYSTEM\]:/gi,
+      /<<SYS>>[\s\S]*?<<\/SYS>>/gi,
+      /<\|im_start\|>system[\s\S]*?<\|im_end\|>/gi
+    ];
+    for (const pat of instructionPatterns) {
+      if (pat.test(filtered)) {
+        reasons.push('SYSTEM_INSTRUCTION_LEAK');
+        filtered = filtered.replace(pat, '[REDACTED_SYSTEM_INSTRUCTION]').trim();
+      }
+    }
+
+    // 2. Strip internal stack traces
+    const stackTracePattern = /(?:Error|Exception|TypeError|ReferenceError):\s+.*\n(?:\s+at\s+.*)+|\s+at\s+.*(?:\.js|\.ts):\d+:\d+/g;
+    if (stackTracePattern.test(filtered)) {
+      reasons.push('STACK_TRACE_LEAK');
+      filtered = filtered.replace(stackTracePattern, '[INTERNAL_ERROR_STACK_REDACTED]');
+    }
+
+    // 3. Strip raw SQL / DB schema identifiers
+    const sqlPatterns = [
+      /\b(?:SELECT\s+.*?\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\s+\w+/gi,
+      /\bsqlite_master\b/gi,
+      /\bPRAGMA\s+\w+/gi
+    ];
+    for (const pat of sqlPatterns) {
+      if (pat.test(filtered)) {
+        reasons.push('SQL_EXPOSURE');
+        filtered = filtered.replace(pat, '[REDACTED_SQL_IDENTIFIER]');
+      }
+    }
+
+    // 4. Scrub any unmasked PII in output (Bidirectional PII Guard)
+    const piiResult = this.scrubPII(filtered);
+    if (piiResult.piiDetected) {
+      reasons.push(`UNMASKED_PII_${piiResult.redactedTypes.join('_')}`);
+      filtered = piiResult.scrubbedText;
+    }
+
+    return {
+      filteredText: filtered,
+      egressFiltered: reasons.length > 0,
+      reasons
+    };
   }
 
   formatSuccessResponse(actionType, result) {

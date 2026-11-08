@@ -56,7 +56,7 @@ export default function SecurityTestLab({ onSecurityEvent }) {
   const runAllScenarios = async () => {
     setRunningAll(true);
     try {
-      const res = await fetch('/api/scenarios/run-all', {
+      const res = await fetch('/api/scenarios/run-all?includeEnterprise=true', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -88,10 +88,10 @@ export default function SecurityTestLab({ onSecurityEvent }) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
               <FlaskConical size={20} color="#00c2a8" />
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Security Test Lab — Scenarios A through H</h2>
+              <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Security Test Lab — Scenarios A through L</h2>
             </div>
             <p style={{ fontSize: '0.86rem', color: '#94a3b8' }}>
-              These checks call the backend security gateway. They use seeded Sarah demo data. The replay check makes one simulated $50 transfer; select <strong>Reset demo</strong> before recording again. No real funds move.
+              Comprehensive test suite including Core Scenarios (A through H) and Gnani Enterprise Guardrails (Voice ASR trust, Hinglish injection defense, PII scrubbing, and session velocity lockout).
             </p>
           </div>
 
@@ -107,7 +107,7 @@ export default function SecurityTestLab({ onSecurityEvent }) {
               onClick={runAllScenarios}
             >
               <Play size={16} />
-              <span>{runningAll ? 'Running All Scenarios...' : 'Run All 8 Scenarios'}</span>
+              <span>{runningAll ? 'Running All Scenarios...' : `Run All ${scenarios.length || 12} Scenarios`}</span>
             </button>
           </div>
         </div>
@@ -127,12 +127,13 @@ export default function SecurityTestLab({ onSecurityEvent }) {
             <div key={sc.id} className="card" style={{ padding: '18px 22px' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: '280px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-main)' }}>
                       {sc.name}
                     </span>
                     <span className="badge badge-subtle">{sc.category}</span>
                     <span className="badge badge-subtle">Expected: {sc.expectedDecision}</span>
+                    {sc.isEnterprise && <span className="badge badge-verify">Enterprise Guardrail</span>}
                   </div>
                   <div style={{ fontSize: '0.84rem', color: '#94a3b8' }}>
                     {sc.description}

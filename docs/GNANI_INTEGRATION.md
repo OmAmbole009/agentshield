@@ -33,10 +33,26 @@ To protect your credit allocation under the **5,000 credit budget constraint**, 
   When the provider returns reported credits in response headers/payloads, exact numbers are recorded. Otherwise, conservative local estimates are logged and clearly flagged as `isEstimatedOnly: true`.
 - **Zero Automatic Billable Retries:**
   Provider timeouts and errors log a `PROVIDER_FAILURE` event and fail closed. AgentShield never performs hidden background retry loops.
+- **Resilient Fallback Adapter (`ResilientGnaniAdapter`):**
+  Wraps live and mock adapters with strict 5-second timeout thresholds. If live calls fail or budget constraints are reached, requests fall back seamlessly to simulated inference without compromising system availability.
 
 ---
 
-## 3. Switching to Live Gnani Integration
+## 3. Voice & Enterprise Guardrails Architecture
+
+| Guardrail Layer | Input Vector | Threshold / Rule | Action Taken |
+|:---|:---|:---|:---|
+| **ASR Filler Normalization** | Transcribed Audio | Disfluencies ("uh", "um", "matlab", "arre") | Stripped before NLP parsing |
+| **Spoken Number Normalization** | Spoken Words | Phrases like "one thousand two hundred" | Normalized to numerical values ("1200") |
+| **Voice Trust Score Guard** | ASR / Biometrics | `asrConfidence < 0.78` OR `voiceBiometricScore < 0.80` | Downgrades `ALLOW` $\rightarrow$ `VERIFY` (Step-Up OTP) |
+| **Bidirectional PII Scrubber** | Audio / Text & Output | 16-digit cards, PAN, Aadhaar, CVV, OTP, Phone | Scrubbed to `<REDACTED_*>` tokens & audited |
+| **Multilingual Injection Defense**| Voice / Text | English & Hinglish transliterated jailbreaks | Flagged as injection $\rightarrow$ `DENY` |
+| **Session Velocity Lockout** | Cumulative Actions | >3 policy denials or injection attempts | `SESSION_LOCKDOWN` $\rightarrow$ Denies all mutating tools |
+| **Output Egress Filter** | Outbound Agent Speech | Internal errors, stack traces, raw SQL, PII | Sanitized before client delivery & TTS synthesis |
+
+---
+
+## 4. Switching to Live Gnani Integration
 
 To activate live calls against `api.vachana.ai`:
 

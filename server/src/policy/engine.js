@@ -27,12 +27,43 @@ const REASON_CODES = {
   ORDER_INELIGIBLE_FOR_REFUND: 'ORDER_INELIGIBLE_FOR_REFUND',
   ISSUE_VERIFICATION_REQUIRED: 'ISSUE_VERIFICATION_REQUIRED',
   IDEMPOTENCY_CONFLICT: 'IDEMPOTENCY_CONFLICT',
-  POLICY_DISABLED: 'POLICY_DISABLED'
+  POLICY_DISABLED: 'POLICY_DISABLED',
+  LOW_VOICE_TRUST_SCORE: 'LOW_VOICE_TRUST_SCORE',
+  SESSION_LOCKDOWN: 'SESSION_LOCKDOWN'
 };
 
 class PolicyEngine {
   constructor(db) {
     this.db = db;
+    this.sessionViolations = new Map();
+    this.lockdownWindowMs = 15 * 60 * 1000;
+    this.maxViolationsBeforeLockdown = 3;
+  }
+
+  recordSessionViolation(sessionKey) {
+    if (!sessionKey) return;
+    const now = Date.now();
+    const history = (this.sessionViolations.get(sessionKey) || [])
+      .filter(ts => now - ts < this.lockdownWindowMs);
+    history.push(now);
+    this.sessionViolations.set(sessionKey, history);
+  }
+
+  isSessionLockedDown(sessionKey) {
+    if (!sessionKey) return false;
+    const now = Date.now();
+    const history = (this.sessionViolations.get(sessionKey) || [])
+      .filter(ts => now - ts < this.lockdownWindowMs);
+    this.sessionViolations.set(sessionKey, history);
+    return history.length > this.maxViolationsBeforeLockdown;
+  }
+
+  resetSessionVelocity(sessionKey) {
+    if (sessionKey) {
+      this.sessionViolations.delete(sessionKey);
+    } else {
+      this.sessionViolations.clear();
+    }
   }
 
   /**
@@ -65,7 +96,16 @@ class PolicyEngine {
    * @param {Object} context.agent - { id, name, permissions }
    * @returns {Object} Structured decision: { decision, reasonCode, policyId, riskLevel, requiresApproval, message, details }
    */
-  evaluate({ actionType, payload, user, agent, idempotencyKey = null }) {
+  evaluate({
+    actionType,
+    payload,
+    user,
+    agent,
+    idempotencyKey = null,
+    asrConfidence = null,
+    voiceBiometricScore = null,
+    sessionId = null
+  }) {
     // 1. Schema & Action Registry Validation
     const validation = validateActionPayload(actionType, payload);
     if (!validation.isValid) {
@@ -84,6 +124,20 @@ class PolicyEngine {
     const cleanPayload = validation.data;
     const policies = this.getActivePolicies();
     const policy = policies[actionType];
+
+    // Session Velocity & Cumulative Risk Guardrail: Block mutating actions if session is locked down
+    const sessionKey = sessionId || user?.id;
+    if (actionDef.isMutating && this.isSessionLockedDown(sessionKey)) {
+      return {
+        decision: DECISIONS.DENY,
+        reasonCode: REASON_CODES.SESSION_LOCKDOWN,
+        policyId: 'policy_session_velocity_guard',
+        riskLevel: RISK_LEVELS.CRITICAL,
+        requiresApproval: false,
+        message: 'Security Alert: Session has been locked down due to excessive policy denials and security violations. All mutating actions are blocked.',
+        details: { sessionKey }
+      };
+    }
 
     if (policy && policy.enabled === 0) {
       return {
@@ -124,7 +178,66 @@ class PolicyEngine {
       };
     }
 
+    // Semantic Ownership / IDOR Pre-Check across accounts and customers
+    if (user && user.role !== 'admin') {
+      if (cleanPayload.accountId) {
+        const targetAcc = this.getAccount(cleanPayload.accountId);
+        if (targetAcc && (targetAcc.user_id !== user.id || targetAcc.tenant_id !== user.tenantId)) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.CROSS_TENANT_ACCESS_DENIED,
+            policyId: policy?.id || 'policy_ownership_guard',
+            riskLevel: RISK_LEVELS.CRITICAL,
+            requiresApproval: false,
+            message: `Cross-tenant or unauthorized account access denied. Account does not belong to user "${user.id}".`,
+            details: { targetAccountUser: targetAcc.user_id, targetAccountTenant: targetAcc.tenant_id, callerTenant: user.tenantId }
+          };
+        }
+      }
+      if (cleanPayload.customerId) {
+        const targetCust = this.getCustomer(cleanPayload.customerId);
+        if (targetCust && (targetCust.user_id !== user.id || targetCust.tenant_id !== user.tenantId)) {
+          return {
+            decision: DECISIONS.DENY,
+            reasonCode: REASON_CODES.CROSS_TENANT_ACCESS_DENIED,
+            policyId: policy?.id || 'policy_ownership_guard',
+            riskLevel: RISK_LEVELS.CRITICAL,
+            requiresApproval: false,
+            message: `Cross-tenant or unauthorized customer access denied. Customer record does not belong to user "${user.id}".`,
+            details: { targetCustomerId: targetCust.id, targetTenant: targetCust.tenant_id, callerTenant: user.tenantId }
+          };
+        }
+      }
+    }
+
     // 4. Action-Specific Policy Rules
+    const decision = this._evaluateActionRules({ actionType, cleanPayload, user, agent, idempotencyKey, policy });
+
+    // 5. Voice/ASR Trust Score Step-Up Guard:
+    // If an action is mutating or high-risk AND asrConfidence < 0.78 OR voiceBiometricScore < 0.80 when provided,
+    // downgrade ALLOW to VERIFY (step-up challenge) with reason LOW_VOICE_TRUST_SCORE.
+    if (decision.decision === DECISIONS.ALLOW) {
+      const isMutatingOrHighRisk = actionDef.isMutating || actionDef.riskLevel === RISK_LEVELS.HIGH || actionDef.riskLevel === RISK_LEVELS.CRITICAL;
+      const hasLowAsrConfidence = asrConfidence !== null && asrConfidence !== undefined && Number(asrConfidence) < 0.78;
+      const hasLowBiometricScore = voiceBiometricScore !== null && voiceBiometricScore !== undefined && Number(voiceBiometricScore) < 0.80;
+
+      if (isMutatingOrHighRisk && (hasLowAsrConfidence || hasLowBiometricScore)) {
+        return {
+          decision: DECISIONS.VERIFY,
+          reasonCode: REASON_CODES.LOW_VOICE_TRUST_SCORE,
+          policyId: policy?.id || 'policy_voice_trust_guard',
+          riskLevel: RISK_LEVELS.HIGH,
+          requiresApproval: true,
+          message: `Step-up verification required: Low voice trust score (ASR confidence: ${asrConfidence ?? 'N/A'}, Biometric: ${voiceBiometricScore ?? 'N/A'}).`,
+          details: { asrConfidence, voiceBiometricScore, actionType }
+        };
+      }
+    }
+
+    return decision;
+  }
+
+  _evaluateActionRules({ actionType, cleanPayload, user, agent, idempotencyKey, policy }) {
     switch (actionType) {
 
       case ACTION_TYPES.READ_BALANCE: {

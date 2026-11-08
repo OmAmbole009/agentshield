@@ -115,6 +115,30 @@ export default function OverviewDashboard({
         </div>
       </div>
 
+      {/* Enterprise AI & Voice Guardrails Status Banner */}
+      <div className="card" style={{ padding: '16px 20px', background: 'rgba(0, 194, 168, 0.05)', border: '1px solid rgba(0, 194, 168, 0.25)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <Shield size={18} color="#00c2a8" />
+              <span style={{ fontWeight: 700, fontSize: '0.98rem', color: '#00c2a8' }}>
+                Gnani Enterprise Voice & Data Guardrails Active
+              </span>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+              Production-grade pre/post-processing defense layers protecting LLM inferences, voice pipelines, and business state:
+            </p>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            <span className="badge badge-allow">✓ Voice Trust Step-Up (&lt;0.78 ASR)</span>
+            <span className="badge badge-allow">✓ Indian Banking PII Redacted</span>
+            <span className="badge badge-allow">✓ Hinglish Injection Intercepted</span>
+            <span className="badge badge-allow">✓ Multi-Turn Velocity Lockdown</span>
+            <span className="badge badge-allow">✓ Output Egress Filtered</span>
+          </div>
+        </div>
+      </div>
+
       {/* Decision Distribution Bar */}
       {total > 0 && (
         <div className="card" style={{ padding: '16px 20px' }}>

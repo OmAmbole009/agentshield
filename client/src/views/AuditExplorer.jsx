@@ -198,6 +198,15 @@ export default function AuditExplorer({ auditEvents, onRefresh }) {
                     </td>
                     <td>
                       <span style={{ fontWeight: 600 }}>{evt.event_type}</span>
+                      {evt.event_type === 'PII_REDACTED' && (
+                        <div style={{ marginTop: '2px' }}><span className="badge badge-verify" style={{ fontSize: '0.68rem' }}>PII Redacted</span></div>
+                      )}
+                      {evt.event_type === 'SESSION_LOCKDOWN' && (
+                        <div style={{ marginTop: '2px' }}><span className="badge badge-deny" style={{ fontSize: '0.68rem' }}>Session Lockdown</span></div>
+                      )}
+                      {evt.event_type === 'OUTPUT_EGRESS_FILTERED' && (
+                        <div style={{ marginTop: '2px' }}><span className="badge badge-verify" style={{ fontSize: '0.68rem' }}>Egress Filtered</span></div>
+                      )}
                     </td>
                     <td>
                       {evt.decision ? (

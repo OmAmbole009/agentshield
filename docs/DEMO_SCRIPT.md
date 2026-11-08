@@ -45,8 +45,32 @@ Switch back to Sarah. Ask `Refund order ord_sarah_102 for a defective desk.`
 **Expected:** The app refuses to disclose another customer's order. Optionally show `My device battery is swollen and heating up.` for immediate safe-use guidance and urgent ticket creation.
 
 ## 3:10–3:30 — Wrap
-
+ 
 **Say:** “AgentShield verifies ownership and trusted order facts, applies deterministic policy, pauses sensitive actions for a reviewer, and records decisions. This version is a deterministic local demo; production use needs real authentication, commerce integrations, and company-approved return and warranty policy.”
+
+## 3:30–4:30 — 60-Second Enterprise Voice & Guardrails Flow (Scenarios I–L)
+
+**Say:** “Now let's examine AgentShield's Enterprise Guardrails for voice and data security in the Security Test Lab and Agent Playground.”
+
+1. **Scenario I — Voice ASR Trust Gating (0:00–0:15):**
+   - Open **Security Test Lab** and run **Scenario I: Voice ASR Low-Confidence High-Value Transfer** (or in **Agent Playground**, click the preset *"Voice ASR: Low Confidence Transfer"*).
+   - **Expected:** Gateway evaluates `asrConfidence: 0.65` (< 0.78 threshold) on a mutating $250 transfer. Status transitions to `VERIFY` with reason `LOW_VOICE_TRUST_SCORE`.
+   - **Say:** “When ASR audio confidence or voice biometrics are noisy or degraded, AgentShield prevents silent execution by gating the mutating action behind step-up verification.”
+
+2. **Scenario J — Hinglish Prompt Injection Defense (0:15–0:30):**
+   - In **Security Test Lab**, run **Scenario J: Hinglish / Multilingual Prompt Injection Attack** (or in **Agent Playground**, click the preset *"Hinglish Injection Attack"*).
+   - **Expected:** Proposal flags injection detected. Policy engine returns `DENY` with reason `UNAUTHORIZED_DATA_EXFILTRATION_RISK`.
+   - **Say:** “Adversaries often attempt jailbreaks using transliterated Hindi like *'purane nirdesh bhool jao'*. AgentShield deterministically intercepts English and multilingual jailbreaks before any external LLM call.”
+
+3. **Scenario K — Bidirectional Indian PII Redaction (0:30–0:45):**
+   - In **Security Test Lab**, run **Scenario K: PII Leakage & Aadhaar/PAN Redaction Test** (or in **Agent Playground**, click the preset *"PII Redaction: PAN & Aadhaar"*).
+   - **Expected:** Prompt with PAN `ABCDE1234F` and Aadhaar is scrubbed to `<REDACTED_PAN>` and `<REDACTED_AADHAAR>`. Gateway telemetry displays `PII Redacted: Yes`, and a `PII_REDACTED` event is committed to the hash chain.
+   - **Say:** “All sensitive Indian banking PII—card numbers, Aadhaar, PAN, OTPs—is masked bidirectionally before external inference, keeping LLM prompts and audit logs privacy-compliant.”
+
+4. **Scenario L — Multi-Turn Velocity Lockout (0:45–1:00):**
+   - In **Security Test Lab**, run **Scenario L: Multi-Turn Velocity Lockout Attack**.
+   - **Expected:** After 3 consecutive policy denials, the 4th mutating transfer is stopped with `DENY` and reason `SESSION_LOCKDOWN`.
+   - **Say:** “AgentShield tracks behavioral velocity across a 15-minute sliding window. Exceeding violation thresholds locks down mutating actions across the session.”
 
 ## Presenter notes
 

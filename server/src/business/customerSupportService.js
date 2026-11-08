@@ -148,6 +148,99 @@ class CustomerSupportService {
     };
   }
 
+  /**
+   * Output Egress Guardrail: Scans and scrubs outbound support messages for leaked
+   * system instructions, internal stack traces, raw SQL identifiers, and unmasked PII.
+   */
+  filterEgressResponse(text) {
+    if (!text || typeof text !== 'string') {
+      return { filteredText: text, egressFiltered: false, reasons: [] };
+    }
+
+    let filtered = text;
+    const reasons = [];
+
+    // 1. Strip leaked system instructions or prompt markers
+    const instructionPatterns = [
+      /You are an action extraction assistant[^\n.]*\.?/gi,
+      /You are a customer support agent[^\n.]*\.?/gi,
+      /system prompt:[^\n.]*\.?/gi,
+      /system instructions?:[^\n.]*\.?/gi,
+      /\[SYSTEM\]:/gi,
+      /<<SYS>>[\s\S]*?<<\/SYS>>/gi,
+      /<\|im_start\|>system[\s\S]*?<\|im_end\|>/gi
+    ];
+    for (const pat of instructionPatterns) {
+      if (pat.test(filtered)) {
+        reasons.push('SYSTEM_INSTRUCTION_LEAK');
+        filtered = filtered.replace(pat, '[REDACTED_SYSTEM_INSTRUCTION]').trim();
+      }
+    }
+
+    // 2. Strip internal stack traces
+    const stackTracePattern = /(?:Error|Exception|TypeError|ReferenceError):\s+.*\n(?:\s+at\s+.*)+|\s+at\s+.*(?:\.js|\.ts):\d+:\d+/g;
+    if (stackTracePattern.test(filtered)) {
+      reasons.push('STACK_TRACE_LEAK');
+      filtered = filtered.replace(stackTracePattern, '[INTERNAL_ERROR_STACK_REDACTED]');
+    }
+
+    // 3. Strip raw SQL / DB schema identifiers
+    const sqlPatterns = [
+      /\b(?:SELECT\s+.*?\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\s+\w+/gi,
+      /\bsqlite_master\b/gi,
+      /\bPRAGMA\s+\w+/gi
+    ];
+    for (const pat of sqlPatterns) {
+      if (pat.test(filtered)) {
+        reasons.push('SQL_EXPOSURE');
+        filtered = filtered.replace(pat, '[REDACTED_SQL_IDENTIFIER]');
+      }
+    }
+
+    // 4. Scrub unmasked PII (Cards, Aadhaar, PAN, CVV, OTP, Phone, Email)
+    const cardRegex = /\b(?:\d{4}[ -]?){3}\d{4}\b/g;
+    if (cardRegex.test(filtered)) {
+      reasons.push('UNMASKED_CARD');
+      filtered = filtered.replace(cardRegex, '<REDACTED_CARD>');
+    }
+    const aadhaarRegex = /\b\d{4}[ -]?\d{4}[ -]?\d{4}\b/g;
+    if (aadhaarRegex.test(filtered)) {
+      reasons.push('UNMASKED_AADHAAR');
+      filtered = filtered.replace(aadhaarRegex, '<REDACTED_AADHAAR>');
+    }
+    const panRegex = /\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b/g;
+    if (panRegex.test(filtered)) {
+      reasons.push('UNMASKED_PAN');
+      filtered = filtered.replace(panRegex, '<REDACTED_PAN>');
+    }
+    const cvvRegex = /\b(?:cvv|cvc|security\s*code)[:\s]*([0-9]{3,4})\b/gi;
+    if (cvvRegex.test(filtered)) {
+      reasons.push('UNMASKED_CVV');
+      filtered = filtered.replace(cvvRegex, (m, c) => m.replace(c, '<REDACTED_CVV>'));
+    }
+    const otpRegex = /\b(?:otp|one[- ]time[- ]password|verification code)[:\s]*([0-9]{4,8})\b/gi;
+    if (otpRegex.test(filtered)) {
+      reasons.push('UNMASKED_OTP');
+      filtered = filtered.replace(otpRegex, (m, c) => m.replace(c, '<REDACTED_OTP>'));
+    }
+    const emailRegex = /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g;
+    if (emailRegex.test(filtered)) {
+      reasons.push('UNMASKED_EMAIL');
+      filtered = filtered.replace(emailRegex, '<REDACTED_EMAIL>');
+    }
+    const phoneRegex = /(?:\+91[\s-]?)?[6789]\d{9}\b/g;
+    if (phoneRegex.test(filtered)) {
+      reasons.push('UNMASKED_PHONE');
+      filtered = filtered.replace(phoneRegex, '<REDACTED_PHONE>');
+    }
+
+    return {
+      filteredText: filtered,
+      egressFiltered: reasons.length > 0,
+      reasons
+    };
+  }
+
   createConversation({ user, conversationId, message }) {
     const customer = this.db.prepare('SELECT * FROM customers WHERE user_id = ?').get(user.id);
     if (!customer) throw new Error('No support customer profile is linked to this demo identity.');
@@ -167,6 +260,14 @@ class CustomerSupportService {
     this.db.prepare('INSERT INTO support_messages (id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?)')
       .run(`msg_${crypto.randomUUID().replace(/-/g, '')}`, conversation.id, 'user', text, now);
     const response = this.respondToSupportMessage({ conversation, user, customer, text });
+
+    // Apply output egress filter to assistant response
+    const egress = this.filterEgressResponse(response.message);
+    response.message = egress.filteredText;
+    if (egress.egressFiltered) {
+      response.metadata = { ...(response.metadata || {}), egressFiltered: true, egressReasons: egress.reasons };
+    }
+
     this.db.prepare('INSERT INTO support_messages (id,conversation_id,role,content,metadata_json,created_at) VALUES (?,?,?,?,?,?)')
       .run(`msg_${crypto.randomUUID().replace(/-/g, '')}`, conversation.id, 'assistant', response.message, JSON.stringify({
         ...(response.metadata || {}), classification: response.classification, orderId: response.order?.id,

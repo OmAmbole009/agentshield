@@ -194,4 +194,94 @@ describe('Deterministic Policy Engine Tests', () => {
     assert.equal(result.decision, DECISIONS.DENY);
     assert.equal(result.reasonCode, REASON_CODES.INVALID_PAYLOAD);
   });
+
+  it('VERIFY: low ASR confidence (< 0.78) downgrades mutating transfer to step-up challenge', () => {
+    const result = policyEngine.evaluate({
+      actionType: ACTION_TYPES.TRANSFER_FUNDS,
+      payload: {
+        fromAccountId: 'acc_sarah_checking',
+        toRecipientId: 'recp_electric_co',
+        amount: 250.00
+      },
+      user: validUser,
+      agent: validAgent,
+      asrConfidence: 0.65
+    });
+
+    assert.equal(result.decision, DECISIONS.VERIFY);
+    assert.equal(result.reasonCode, REASON_CODES.LOW_VOICE_TRUST_SCORE);
+    assert.equal(result.requiresApproval, true);
+  });
+
+  it('VERIFY: low voice biometric score (< 0.80) triggers step-up challenge', () => {
+    const result = policyEngine.evaluate({
+      actionType: ACTION_TYPES.TRANSFER_FUNDS,
+      payload: {
+        fromAccountId: 'acc_sarah_checking',
+        toRecipientId: 'recp_electric_co',
+        amount: 250.00
+      },
+      user: validUser,
+      agent: validAgent,
+      voiceBiometricScore: 0.72
+    });
+
+    assert.equal(result.decision, DECISIONS.VERIFY);
+    assert.equal(result.reasonCode, REASON_CODES.LOW_VOICE_TRUST_SCORE);
+    assert.equal(result.requiresApproval, true);
+  });
+
+  it('ALLOW: high ASR confidence and biometric score permits low-risk transfer', () => {
+    const result = policyEngine.evaluate({
+      actionType: ACTION_TYPES.TRANSFER_FUNDS,
+      payload: {
+        fromAccountId: 'acc_sarah_checking',
+        toRecipientId: 'recp_electric_co',
+        amount: 250.00
+      },
+      user: validUser,
+      agent: validAgent,
+      asrConfidence: 0.95,
+      voiceBiometricScore: 0.92
+    });
+
+    assert.equal(result.decision, DECISIONS.ALLOW);
+    assert.equal(result.requiresApproval, false);
+  });
+
+  it('DENY: multi-turn session velocity lockout after exceeding 3 violations denies mutating action', () => {
+    const testSession = 'sess_velocity_test_123';
+    // Record 4 violations for session
+    for (let i = 0; i < 4; i++) {
+      policyEngine.recordSessionViolation(testSession);
+    }
+    assert.equal(policyEngine.isSessionLockedDown(testSession), true);
+
+    const result = policyEngine.evaluate({
+      actionType: ACTION_TYPES.TRANSFER_FUNDS,
+      payload: {
+        fromAccountId: 'acc_sarah_checking',
+        toRecipientId: 'recp_electric_co',
+        amount: 50.00
+      },
+      user: validUser,
+      agent: validAgent,
+      sessionId: testSession
+    });
+
+    assert.equal(result.decision, DECISIONS.DENY);
+    assert.equal(result.reasonCode, REASON_CODES.SESSION_LOCKDOWN);
+  });
+
+  it('DENY: semantic ownership IDOR check blocks target account not owned by user', () => {
+    const result = policyEngine.evaluate({
+      actionType: ACTION_TYPES.READ_BALANCE,
+      payload: { accountId: 'acc_michael_savings' },
+      user: validUser,
+      agent: validAgent
+    });
+
+    assert.equal(result.decision, DECISIONS.DENY);
+    assert.equal(result.reasonCode, REASON_CODES.CROSS_TENANT_ACCESS_DENIED);
+  });
 });
