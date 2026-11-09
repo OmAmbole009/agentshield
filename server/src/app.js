@@ -26,7 +26,7 @@ const { createAccountRouter } = require('./api/routes/accountRoutes');
 const { createScenariosRouter } = require('./api/routes/scenariosRoutes');
 const { createSupportRouter } = require('./api/routes/supportRoutes');
 
-function createApp(customDb = null) {
+function createApp(customDb = null, { useLiveProviders = config.gnani.enabled, gnaniAdapter: providedGnaniAdapter = null } = {}) {
   const app = express();
   const db = customDb || getDb();
 
@@ -40,8 +40,11 @@ function createApp(customDb = null) {
   const bankingService = new BankingService(db);
   const customerSupportService = new CustomerSupportService(db);
   const budgetGuard = new BudgetGuard(db);
-  const gnaniAdapter = createGnaniAdapter({ budgetGuard });
-  const intentExtractor = new IntentExtractor({ deterministicOnly: !config.gnani.enabled });
+  const gnaniAdapter = providedGnaniAdapter || createGnaniAdapter({ budgetGuard, enabled: useLiveProviders });
+  const intentExtractor = new IntentExtractor({
+    deterministicOnly: !useLiveProviders || config.aiProvider !== 'gnani',
+    liveLlmProvider: useLiveProviders && config.aiProvider === 'gnani' ? gnaniAdapter : null
+  });
 
   const securityGateway = new SecurityGateway({
     db,
@@ -91,7 +94,7 @@ function createApp(customDb = null) {
   app.use('/api/providers', createProviderRouter({ budgetGuard, gnaniAdapter }));
   app.use('/api/accounts', createAccountRouter({ bankingService, db }));
   app.use('/api/scenarios', createScenariosRouter({ securityGateway, bankingService, db }));
-  app.use('/api/support', createSupportRouter({ customerSupportService, securityGateway, db, auditLogger }));
+  app.use('/api/support', createSupportRouter({ customerSupportService, securityGateway, db, auditLogger, gnaniAdapter }));
 
   // Keep missing API paths machine-readable instead of falling through to an HTML 404.
   app.use('/api', (req, res) => {

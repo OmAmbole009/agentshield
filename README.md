@@ -43,14 +43,15 @@ AI agents can request actions with real consequences. AgentShield treats model o
 - User and tenant ownership checks, agent permissions, transfer ceilings, recipient checks, and refund limits.
 - One time, parameter bound verification challenge for sensitive operations. The local demo shows the challenge code in the UI; the user can authorize or reject it. Rejected requests are invalidated and never execute.
 - SQLite persistence, idempotency protection, transactional business updates, and SHA-256 chained audit records.
-- Rule based text intent extraction and optional Gnani provider adapters. The seeded demo works without paid credentials.
+- Deterministic intent extraction with optional Gnani reasoning, STT, and TTS adapters. Live provider calls are controlled by `.env`; keep `GNANI_ENABLED=false` and `AI_MODEL_PROVIDER=deterministic` for offline/no-cost operation.
+- Browser microphone input is available in both the finance playground and customer support conversation. Voice is transcribed server-side; both agents show an editable transcript and require an explicit Send before processing it.
 - React dashboard, playground, policy center, audit explorer, provider monitor, support agent, and security scenario lab.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-  U[User text or simulated voice] --> I[Intent proposal extractor]
+  U[User text or microphone audio] --> I[Intent proposal extractor]
   I --> V[Action schema validation]
   V --> P[Deterministic policy engine]
   P -->|DENY| D[Record denial]
@@ -93,7 +94,7 @@ Open `http://localhost:3001`. To use Vite hot reload, run `npm run dev` and open
 See [`.env.example`](.env.example). Key settings:
 
 - `PORT`, `CORS_ORIGIN`, and `DATABASE_PATH` configure the local service.
-- `AI_MODEL_PROVIDER=deterministic` and `GNANI_ENABLED=false` keep the offline demo deterministic and avoid external calls.
+- `AI_MODEL_PROVIDER=deterministic` and `GNANI_ENABLED=false` keep the offline demo deterministic and avoid external calls. Use `AI_MODEL_PROVIDER=gnani` with `GNANI_ENABLED=true` to activate live reasoning and voice services; provider calls may consume credits.
 - Gnani endpoints, model names, key, and credit limits are optional. Do not commit credentials.
 - `NODE_ENV=production` intentionally fails closed because no production authentication provider is implemented.
 

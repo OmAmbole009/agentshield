@@ -38,6 +38,7 @@ Returns runtime status, database connectivity, and provider configuration.
 ## 2. Security Gateway
 ### `POST /api/gateway/process`
 Main entrypoint for evaluating and authorizing text or voice instructions.
+For audio requests, this route now returns a transcript with `requiresConfirmation: true` and does not evaluate or execute the instruction. Review/edit the transcript, then send it as `text` in a new request.
 
 **Headers:**
 - `Content-Type: application/json`
@@ -186,7 +187,10 @@ Executes all 8 attack scenarios in parallel and returns pass/fail audit results.
 ## 6. Customer support sandbox
 
 ### `POST /api/support/chat`
-Send `{ "message": "...", "conversationId": "optional existing id" }`. The backend binds the conversation to the server-selected demo identity, saves both messages, verifies any selected order against that identity, and returns a deterministic classification and response. Foreign/made-up order IDs receive a generic verification response. Safety hazards create urgent support tickets.
+Send `{ "message": "...", "conversationId": "optional existing id" }` for text or `{ "audioBase64": "...", "audioOptions": { "mimeType": "audio/webm;codecs=opus", "languageCode": "en-IN" }, "conversationId": "optional existing id" }` for voice. Voice recordings are limited to 6 MB and supported formats are WebM, Ogg, MP4, WAV, and MPEG. Low-confidence transcripts are returned with `requiresConfirmation: true` and are not processed until the caller confirms them as text. The backend binds the conversation to the server-selected demo identity, saves both messages, verifies any selected order against that identity, and returns a deterministic classification and response. Foreign/made-up order IDs receive a generic verification response. Safety hazards create urgent support tickets.
+
+### `POST /api/provider/transcribe`
+Transcribes `{ "audioBase64": "...", "audioOptions": { "mimeType": "audio/webm;codecs=opus", "languageCode": "en-IN" } }` and returns recognized `transcript`, confidence, language, and model metadata. This endpoint never processes an agent action. Mock, empty, or failed recognition returns an error rather than a guessed transcript.
 
 ### `GET /api/support/conversations/:id`
 Restores saved messages only when the conversation belongs to the selected demo user.

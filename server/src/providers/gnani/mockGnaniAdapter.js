@@ -4,13 +4,11 @@ class MockGnaniAdapter {
   }
 
   /**
-   * High-fidelity simulated speech-to-text.
+   * Records mock STT usage without pretending to recognize unprocessed audio.
    */
   async transcribeAudio(audioBuffer, options = {}) {
     const startTime = Date.now();
     const languageCode = options.languageCode || 'en-IN';
-    const mockPhrase = options.mockPhrase || 'Transfer $500 to recp_landlord_prop for monthly rent';
-
     const durationMs = Date.now() - startTime + 45; // simulate brief processing latency
 
     if (this.budgetGuard) {
@@ -27,8 +25,8 @@ class MockGnaniAdapter {
     }
 
     return {
-      transcript: mockPhrase,
-      confidence: 0.97,
+      transcript: '',
+      confidence: 0,
       languageCode,
       model: 'prisma-v2.5-mock',
       isMock: true,

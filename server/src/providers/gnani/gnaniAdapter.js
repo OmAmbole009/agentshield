@@ -7,7 +7,7 @@ class ResilientGnaniAdapter {
     this.budgetGuard = budgetGuard;
     this.liveAdapter = liveAdapter;
     this.mockAdapter = mockAdapter || new MockGnaniAdapter({ budgetGuard });
-    this.timeoutMs = 5000;
+    this.timeoutMs = 20000;
   }
 
   async transcribeAudio(audioBuffer, options = {}) {
@@ -41,7 +41,7 @@ class ResilientGnaniAdapter {
           metadata: { error: err.message, fallback: true }
         });
       }
-      return this.mockAdapter.transcribeAudio(audioBuffer, options);
+      throw err;
     }
   }
 
@@ -119,8 +119,8 @@ class ResilientGnaniAdapter {
 /**
  * Creates the appropriate Gnani voice & reasoning adapter based on configuration and budget.
  */
-function createGnaniAdapter({ budgetGuard }) {
-  const isLiveConfigured = config.gnani.enabled && !!config.gnani.apiKey;
+function createGnaniAdapter({ budgetGuard, enabled = config.gnani.enabled }) {
+  const isLiveConfigured = enabled && !!config.gnani.apiKey;
   const mockAdapter = new MockGnaniAdapter({ budgetGuard });
   const liveAdapter = isLiveConfigured ? new LiveGnaniAdapter({ budgetGuard }) : null;
 

@@ -11,7 +11,7 @@ const { DECISIONS } = require('./server/src/policy/engine');
 async function main() {
   const db = getDb(':memory:');
   seedDatabase(db);
-  const { securityGateway, bankingService, auditLogger } = createApp(db);
+  const { securityGateway, bankingService, auditLogger } = createApp(db, { useLiveProviders: false });
 
   const sarah = { id: 'usr_sarah_01', name: 'Sarah Connor', tenantId: 'tenant_retail', role: 'customer' };
   const agent = {
@@ -163,7 +163,7 @@ async function main() {
       actionType: ACTION_TYPES.TRANSFER_FUNDS,
       payload: { fromAccountId: 'acc_sarah_checking', toRecipientId: 'recp_electric_co', amount: 100 }
     },
-    user: sarah, agent
+    user: sarah, agent, sessionId: 'acceptance-persistence'
   });
   const j2 = bankingService.readBalance({ accountId: 'acc_sarah_checking', user: sarah }).balance;
   check('Test J: Persistence - transfer recorded and balance updated',
@@ -194,4 +194,3 @@ main().catch(e => {
   console.error(e.stack);
   process.exit(1);
 });
-

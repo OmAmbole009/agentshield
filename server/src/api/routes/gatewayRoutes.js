@@ -1,4 +1,5 @@
 const express = require('express');
+const { transcribeAudioInput } = require('../../providers/gnani/audioInput');
 
 function createGatewayRouter({ securityGateway }) {
   const router = express.Router();
@@ -22,9 +23,17 @@ function createGatewayRouter({ securityGateway }) {
         sessionId
       } = req.body;
 
-      let audioBuffer = null;
-      if (audioBase64) {
-        audioBuffer = Buffer.from(audioBase64, 'base64');
+      if (audioBase64 !== undefined && audioBase64 !== null) {
+        const transcription = await transcribeAudioInput(
+          securityGateway.gnaniAdapter,
+          audioBase64,
+          audioOptions
+        );
+        return res.json({
+          success: true,
+          requiresConfirmation: true,
+          ...transcription
+        });
       }
 
       let directAction = null;
@@ -34,7 +43,7 @@ function createGatewayRouter({ securityGateway }) {
 
       const result = await securityGateway.processRequest({
         text,
-        audioBuffer,
+        audioBuffer: null,
         audioOptions,
         directAction,
         user: req.user,

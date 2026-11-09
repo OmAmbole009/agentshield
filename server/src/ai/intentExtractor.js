@@ -19,24 +19,32 @@ class IntentExtractor {
   async extractProposal(text, context = {}) {
     let rawProposal = null;
     let source = 'deterministic';
+    const deterministicProposal = this.deterministicExtractor.extract(text, context);
+
+    // Keep known prompt attacks out of the external model and avoid billable calls for empty audio.
+    if (deterministicProposal.isInjectionDetected) {
+      rawProposal = deterministicProposal;
+    }
 
     // 1. Try external provider if configured and not deterministicOnly
-    if (!this.deterministicOnly && this.liveLlmProvider && typeof this.liveLlmProvider.inferReasoning === 'function') {
+    if (!rawProposal && text?.trim() && !this.deterministicOnly && this.liveLlmProvider && typeof this.liveLlmProvider.inferReasoning === 'function') {
       try {
         const llmResult = await this.liveLlmProvider.inferReasoning(text, context);
-        if (llmResult && llmResult.actionType && llmResult.payload) {
-          rawProposal = llmResult;
-          source = 'live_llm';
+        if (llmResult && !llmResult.isMock && llmResult.actionType && llmResult.payload) {
+          const llmValidation = validateActionPayload(llmResult.actionType, llmResult.payload);
+          if (llmValidation.isValid) {
+            rawProposal = llmResult;
+            source = 'live_llm';
+          }
         }
       } catch (err) {
         console.warn('Live LLM provider failed, falling back to deterministic extractor:', err.message);
-        rawProposal = null;
       }
     }
 
     // 2. Use deterministic extractor as fallback or primary
     if (!rawProposal) {
-      rawProposal = this.deterministicExtractor.extract(text, context);
+      rawProposal = deterministicProposal;
       source = 'deterministic';
     }
 

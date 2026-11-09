@@ -92,7 +92,7 @@ describe('AgentShield Express HTTP API Integration Tests', () => {
   beforeEach(() => {
     db = getDb(':memory:');
     seedDatabase(db);
-    const instance = createApp(db);
+    const instance = createApp(db, { useLiveProviders: false });
     app = instance.app;
   });
 
@@ -121,6 +121,75 @@ describe('AgentShield Express HTTP API Integration Tests', () => {
     assert.equal(res.body.success, true);
     assert.equal(res.body.decision, 'ALLOW');
     assert.equal(res.body.executionResult.balance, 12450.00);
+  });
+
+  it('POST /api/gateway/process transcribes voice but never executes it before confirmation', async () => {
+    let receivedAudio = null;
+    const voiceApp = createApp(db, {
+      useLiveProviders: false,
+      gnaniAdapter: {
+        async transcribeAudio(buffer, options) {
+          receivedAudio = { buffer, options };
+          return {
+            transcript: 'Transfer $250 to City Electric Power for utilities',
+            confidence: 0.99,
+            languageCode: options.languageCode,
+            model: 'test-stt',
+            isMock: false
+          };
+        }
+      }
+    });
+    const balanceBefore = db.prepare('SELECT balance FROM accounts WHERE id = ?').get('acc_sarah_checking').balance;
+    const transactionsBefore = db.prepare('SELECT COUNT(*) AS count FROM transactions').get().count;
+    const res = await makeRequest(voiceApp.app, {
+      method: 'POST',
+      path: '/api/gateway/process',
+      headers: SARAH_HEADERS,
+      body: {
+        audioBase64: Buffer.from('recorded voice').toString('base64'),
+        audioOptions: { mimeType: 'audio/webm', languageCode: 'hi-IN' }
+      }
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.requiresConfirmation, true);
+    assert.equal(res.body.transcript, 'Transfer $250 to City Electric Power for utilities');
+    assert.equal(receivedAudio.buffer.toString(), 'recorded voice');
+    assert.equal(receivedAudio.options.languageCode, 'hi-IN');
+    assert.equal(db.prepare('SELECT balance FROM accounts WHERE id = ?').get('acc_sarah_checking').balance, balanceBefore);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM transactions').get().count, transactionsBefore);
+  });
+
+  it('POST /api/provider/transcribe returns the recognized transcript without executing an action', async () => {
+    const voiceApp = createApp(db, {
+      useLiveProviders: false,
+      gnaniAdapter: {
+        async transcribeAudio(buffer, options) {
+          return {
+            transcript: 'Show my recent transactions',
+            confidence: 0.93,
+            languageCode: options.languageCode,
+            model: 'test-stt',
+            isMock: false
+          };
+        }
+      }
+    });
+    const res = await makeRequest(voiceApp.app, {
+      method: 'POST',
+      path: '/api/provider/transcribe',
+      headers: SARAH_HEADERS,
+      body: {
+        audioBase64: Buffer.from('recorded voice').toString('base64'),
+        audioOptions: { mimeType: 'audio/webm', languageCode: 'en-IN' }
+      }
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.transcript, 'Show my recent transactions');
+    assert.equal(res.body.confidence, 0.93);
+    assert.equal(res.body.model, 'test-stt');
   });
 
   it('POST /api/gateway/process safely reads transaction history for the account owner', async () => {

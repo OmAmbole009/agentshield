@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Send, ShieldCheck } from 'lucide-react';
+import VoiceRecorder from '../components/VoiceRecorder';
 
 const examples = [
   'Where is order ord_sarah_101?',
@@ -36,6 +37,7 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [transcriptNotice, setTranscriptNotice] = useState('');
   const [approvals, setApprovals] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -74,10 +76,17 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
     const message = value.trim();
     if (!message || busy) return;
     setMessages(prev => [...prev, { role: 'user', content: message }]);
-    setDraft(''); setBusy(true); setError('');
+    setDraft('');
+    setTranscriptNotice('');
+    setBusy(true); setError('');
     try {
       const response = await fetch('/api/support/chat', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-User-Id': currentUser.id },
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': currentUser.id,
+          'X-Agent-Id': 'customer-support-agent'
+        },
         body: JSON.stringify({ conversationId, message })
       });
       const data = await readApiResponse(response, 'Support request failed.');
@@ -86,7 +95,13 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
       setMessages(prev => [...prev, { role: 'assistant', content: data.message, classification: data.classification, metadata: data.metadata, order: data.order, eligibility: data.eligibility }]);
       onSecurityEvent?.();
       if (currentUser.role === 'admin') loadAdminData();
-    } catch (err) { setMessages(prev => prev.slice(0, -1)); setDraft(message); setError(explainRequestError(err)); }
+    } catch (err) {
+      if (message) {
+        setMessages(prev => prev.slice(0, -1));
+        setDraft(message);
+      }
+      setError(explainRequestError(err));
+    }
     finally { setBusy(false); }
   }
 
@@ -132,9 +147,20 @@ export default function SupportConversation({ currentUser, onSecurityEvent }) {
       {busy && <div style={{ color: 'var(--text-muted)' }}>Checking verified support records…</div>}
     </div>
     <form onSubmit={e => { e.preventDefault(); send(); }} style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-      <input className="input" value={draft} onChange={e => setDraft(e.target.value)} maxLength={2000} placeholder="Describe what you need help with…" aria-label="Support message" />
+      <input className="input" value={draft} onChange={e => { setDraft(e.target.value); setTranscriptNotice(''); }} maxLength={2000} placeholder="Review the transcript or describe what you need help with…" aria-label="Support message" />
+      <VoiceRecorder
+        disabled={busy}
+        userId={currentUser.id}
+        agentId="customer-support-agent"
+        onTranscript={result => {
+          setDraft(result.transcript);
+          setTranscriptNotice(`Transcript ready${result.confidence !== null ? ` · ${Math.round(result.confidence * 100)}% confidence` : ''}. Review or edit it, then press Send.`);
+          setError('');
+        }}
+      />
       <button className="btn btn-primary" disabled={busy || !draft.trim()}><Send size={16} /> Send</button>
     </form>
+    {transcriptNotice && <div role="status" style={{ color: 'var(--text-muted)', marginTop: 8, fontSize: 12 }}>{transcriptNotice}</div>}
     {error && <div role="alert" style={{ color: 'var(--color-deny)', marginTop: 8 }}>{error}</div>}
     {currentUser.role === 'admin' && <div style={{ marginTop: 24 }}>
       {summary && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(145px,1fr))', gap: 8, marginBottom: 18 }}>

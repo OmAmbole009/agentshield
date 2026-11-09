@@ -28,7 +28,7 @@ describe('AgentShield Core Demonstration Scenarios (A through H)', () => {
   beforeEach(() => {
     db = getDb(':memory:');
     seedDatabase(db);
-    appInstance = createApp(db);
+    appInstance = createApp(db, { useLiveProviders: false });
     securityGateway = appInstance.securityGateway;
     bankingService = appInstance.bankingService;
   });
@@ -193,8 +193,10 @@ describe('AgentShield Core Demonstration Scenarios (A through H)', () => {
       agent: demoAgent
     });
 
-    // Gateway handles provider error gracefully and executes safe fallback or denial without crashing
-    assert.ok(result.decision === DECISIONS.ALLOW || result.decision === DECISIONS.DENY);
+    // Missing audio recognition must not turn into a canned money movement request.
+    assert.equal(result.decision, DECISIONS.DENY);
+    assert.equal(result.proposal.actionType, 'UNKNOWN');
+    assert.equal(bankingService.readBalance({ accountId: 'acc_sarah_checking', user: demoUser }).balance, 12450.00);
   });
 
   it('Scenario H: Cross-User Access (Attacker attempts to read or drain another user\'s account -> DENIED)', async () => {

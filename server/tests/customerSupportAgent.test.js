@@ -102,7 +102,7 @@ describe('Customer Support Agent Integration & Threat Scenarios', () => {
     const fixtureNow = new Date().toISOString();
     db.prepare(`INSERT INTO support_issues (id,conversation_id,customer_id,order_id,product_sku,classification,details,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
       .run('issue_test_fixture', 'conversation_test_fixture', 'cust_sarah_01', 'ord_sarah_101', 'SKU-AUDIO-441', 'DEFECT_REPORTED', 'Test fixture: reported audio jack defect', 'OPEN', fixtureNow, fixtureNow);
-    appInstance = createApp(db);
+    appInstance = createApp(db, { useLiveProviders: false });
     securityGateway = appInstance.securityGateway;
     customerSupportService = appInstance.customerSupportService;
     auditLogger = appInstance.auditLogger;
@@ -611,6 +611,60 @@ describe('Customer Support Agent Integration & Threat Scenarios', () => {
     assert.equal(foreign.status, 200);
     assert.match(foreign.body.message, /could not verify/i);
     assert.equal(foreign.body.order, undefined);
+  });
+
+  it('voice support returns a transcript for review and never processes audio directly', async () => {
+    const audioBase64 = Buffer.from('audio bytes').toString('base64');
+    const unavailable = await makeRequest(appInstance.app, {
+      method: 'POST',
+      path: '/api/support/chat',
+      headers: { 'X-User-Id': 'usr_sarah_01' },
+      body: { audioBase64, audioOptions: { mimeType: 'audio/webm' } }
+    });
+    assert.equal(unavailable.status, 503);
+    assert.equal(unavailable.body.errorCode, 'SPEECH_RECOGNITION_UNAVAILABLE');
+
+    let voiceConfidence = 0.6;
+    const voiceApp = createApp(db, {
+      useLiveProviders: false,
+      gnaniAdapter: {
+        async transcribeAudio(buffer, options) {
+          assert.equal(buffer.toString(), 'audio bytes');
+          assert.equal(options.languageCode, 'en-IN');
+          return { transcript: 'Where is order ord_sarah_101?', confidence: voiceConfidence, isMock: false };
+        }
+      }
+    });
+    const transcription = await makeRequest(voiceApp.app, {
+      method: 'POST',
+      path: '/api/support/chat',
+      headers: { 'X-User-Id': 'usr_sarah_01', 'X-Agent-Id': 'customer-support-agent' },
+      body: { audioBase64, audioOptions: { mimeType: 'audio/webm', languageCode: 'en-IN' } }
+    });
+    assert.equal(transcription.status, 200);
+    assert.equal(transcription.body.requiresConfirmation, true);
+    assert.equal(transcription.body.transcript, 'Where is order ord_sarah_101?');
+    assert.equal(transcription.body.conversationId, undefined);
+
+    voiceConfidence = 0.95;
+    const highConfidenceTranscription = await makeRequest(voiceApp.app, {
+      method: 'POST',
+      path: '/api/support/chat',
+      headers: { 'X-User-Id': 'usr_sarah_01', 'X-Agent-Id': 'customer-support-agent' },
+      body: { audioBase64, audioOptions: { mimeType: 'audio/webm', languageCode: 'en-IN' } }
+    });
+    assert.equal(highConfidenceTranscription.status, 200);
+    assert.equal(highConfidenceTranscription.body.requiresConfirmation, true);
+    assert.equal(highConfidenceTranscription.body.transcript, 'Where is order ord_sarah_101?');
+    assert.equal(highConfidenceTranscription.body.conversationId, undefined);
+    const confirmed = await makeRequest(voiceApp.app, {
+      method: 'POST',
+      path: '/api/support/chat',
+      headers: { 'X-User-Id': 'usr_sarah_01', 'X-Agent-Id': 'customer-support-agent' },
+      body: { message: highConfidenceTranscription.body.transcript }
+    });
+    assert.equal(confirmed.status, 200);
+    assert.match(confirmed.body.message, /delivered/i);
   });
 
   it('gateway blocks refund proposals without a recorded product issue', async () => {

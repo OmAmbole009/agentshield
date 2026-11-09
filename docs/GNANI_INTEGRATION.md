@@ -34,7 +34,7 @@ To protect your credit allocation under the **5,000 credit budget constraint**, 
 - **Zero Automatic Billable Retries:**
   Provider timeouts and errors log a `PROVIDER_FAILURE` event and fail closed. AgentShield never performs hidden background retry loops.
 - **Resilient Fallback Adapter (`ResilientGnaniAdapter`):**
-  Wraps live and mock adapters with strict 5-second timeout thresholds. If live calls fail or budget constraints are reached, requests fall back seamlessly to simulated inference without compromising system availability.
+  Wraps live and mock adapters with 20-second request timeouts. Failed voice recognition does not fabricate a transcript. Both finance and support flows show the transcript for review and require an explicit submit before processing.
 
 ---
 
@@ -59,8 +59,12 @@ To activate live calls against `api.vachana.ai`:
 1. Open `.env`.
 2. Configure your credentials:
    ```env
+   AI_MODEL_PROVIDER=gnani
    GNANI_ENABLED=true
    GNANI_API_KEY=your_actual_vachana_api_key_here
+   GNANI_STT_ENDPOINT=https://api.vachana.ai/stt/v3
+   GNANI_TTS_ENDPOINT=https://api.vachana.ai/api/v1/tts
+   GNANI_LLM_ENDPOINT=https://api.vachana.ai/v1/chat/completions
    GNANI_CREDIT_BUDGET=5000
    GNANI_CREDIT_RESERVE=1000
    ```

@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import {
   Send,
-  Mic,
-  MicOff,
   Volume2,
   AlertCircle,
   CheckCircle2,
@@ -14,14 +12,15 @@ import {
   Play,
   RotateCcw
 } from 'lucide-react';
+import VoiceRecorder from '../components/VoiceRecorder';
 
 export default function LivePlayground({ currentUser, onSecurityEvent }) {
   const [inputText, setInputText] = useState('');
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [enableTts, setEnableTts] = useState(true);
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
   const [error, setError] = useState(null);
+  const [transcriptNotice, setTranscriptNotice] = useState('');
 
   // Step-up verification modal state
   const [showVerifyModal, setShowVerifyModal] = useState(false);
@@ -80,9 +79,9 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
     }
   ];
 
-  const handleSend = async (overrideText = null, isSimulatedVoice = false, extraParams = {}) => {
-    const textToSend = overrideText || inputText;
-    if (!textToSend.trim() && !isSimulatedVoice) return;
+  const handleSend = async (overrideText = null, extraParams = {}) => {
+    const textToSend = overrideText ?? inputText;
+    if (!textToSend.trim()) return;
 
     setLoading(true);
     setError(null);
@@ -95,12 +94,6 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
         generateAudio: enableTts,
         ...extraParams
       };
-
-      // If simulated voice, send a mock base64 audio payload
-      if (isSimulatedVoice) {
-        payload.audioBase64 = 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-        payload.audioOptions = { mockPhrase: textToSend, languageCode: 'en-IN' };
-      }
 
       const res = await fetch('/api/gateway/process', {
         method: 'POST',
@@ -137,7 +130,6 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
       setError(err.message);
     } finally {
       setLoading(false);
-      setIsVoiceActive(false);
     }
   };
 
@@ -260,7 +252,7 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
                   const extra = {};
                   if (sc.asrConfidence !== undefined) extra.asrConfidence = sc.asrConfidence;
                   if (sc.voiceBiometricScore !== undefined) extra.voiceBiometricScore = sc.voiceBiometricScore;
-                  handleSend(sc.text, false, extra);
+                  handleSend(sc.text, extra);
                 }}
               >
                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: catColor }} />
@@ -291,28 +283,27 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
           <input
             type="text"
             className="input"
-            placeholder="Try: Check my account transaction history"
+            placeholder="Review the transcript or type: Check my account transaction history"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={(e) => { setInputText(e.target.value); setTranscriptNotice(''); }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleSend();
             }}
           />
 
-          {/* This button submits a mock transcript; it does not record from a microphone. */}
-          <button
-            className={`btn ${isVoiceActive ? 'btn-danger' : 'btn-secondary'}`}
-            title="Submit a mock voice transcript. No microphone recording is used."
-            onClick={() => {
-              const phrase = inputText.trim() || 'Transfer $1,200 to Northgate Property Management for rent';
-              setInputText(phrase);
-              setIsVoiceActive(true);
-              handleSend(phrase, true);
+          <VoiceRecorder
+            disabled={loading}
+            userId={currentUser.id}
+            agentId="voice-assistant-agent"
+            onTranscript={result => {
+              setInputText(result.transcript);
+              setTranscriptNotice(
+                `Transcript ready${result.confidence !== null ? ` · ${Math.round(result.confidence * 100)}% confidence` : ''}. Review or edit it, then press Send.`
+              );
+              setResponse(null);
+              setError(null);
             }}
-          >
-            <Mic size={16} />
-            <span>Mock voice</span>
-          </button>
+          />
 
           <button
             className="btn btn-primary"
@@ -323,6 +314,8 @@ export default function LivePlayground({ currentUser, onSecurityEvent }) {
             <span>{loading ? 'Evaluating...' : 'Send'}</span>
           </button>
         </div>
+
+        {transcriptNotice && <div role="status" style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: '0.84rem' }}>{transcriptNotice}</div>}
 
         {error && (
           <div style={{ marginTop: '12px', padding: '10px 14px', background: 'var(--bg-deny)', border: '1px solid var(--border-deny)', borderRadius: 'var(--radius-sm)', color: 'var(--color-deny)', fontSize: '0.84rem', display: 'flex', alignItems: 'center', gap: '8px' }}>

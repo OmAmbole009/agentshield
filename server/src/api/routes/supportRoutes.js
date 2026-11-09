@@ -1,13 +1,20 @@
 const express = require('express');
 const { ACTION_TYPES } = require('../../registry/actions');
+const { transcribeAudioInput } = require('../../providers/gnani/audioInput');
 
-function createSupportRouter({ customerSupportService, securityGateway, db, auditLogger }) {
+function createSupportRouter({ customerSupportService, securityGateway, db, auditLogger, gnaniAdapter }) {
   const router = express.Router();
 
-  router.post('/chat', (req, res, next) => {
+  router.post('/chat', async (req, res, next) => {
     try {
+      const { audioBase64, audioOptions = {}, message, conversationId } = req.body;
+      if (audioBase64 !== undefined && audioBase64 !== null) {
+        const transcription = await transcribeAudioInput(gnaniAdapter, audioBase64, audioOptions);
+        return res.json({ success: true, requiresConfirmation: true, ...transcription });
+      }
+
       const result = customerSupportService.createConversation({
-        user: req.user, conversationId: req.body.conversationId, message: req.body.message
+        user: req.user, conversationId, message
       });
       const event = result.metadata?.decision === 'DENY' ? 'SECURITY_BREACH_ATTEMPT' : 'SUPPORT_CONVERSATION';
       auditLogger.logEvent({

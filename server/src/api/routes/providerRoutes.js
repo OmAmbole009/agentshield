@@ -1,4 +1,5 @@
 const express = require('express');
+const { transcribeAudioInput } = require('../../providers/gnani/audioInput');
 
 function createProviderRouter({ budgetGuard, gnaniAdapter }) {
   const router = express.Router();
@@ -23,6 +24,19 @@ function createProviderRouter({ budgetGuard, gnaniAdapter }) {
 
   router.get('/usage', usageHandler);
   router.get('/status', usageHandler);
+
+  router.post('/transcribe', async (req, res, next) => {
+    try {
+      const result = await transcribeAudioInput(
+        gnaniAdapter,
+        req.body.audioBase64,
+        req.body.audioOptions
+      );
+      res.json({ success: true, ...result });
+    } catch (err) {
+      next(err);
+    }
+  });
 
   /**
    * POST /api/provider/test-speech
